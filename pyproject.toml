@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "google-labs-jules[bot]", email = "161369871+google-labs-jules[bot]@users.noreply.github.com" }
+    { name = "Max Frankenberg", email = "frankenbergmax57@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
