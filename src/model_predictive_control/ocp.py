@@ -73,7 +73,15 @@ class OCP:
 
         return nx, nu
 
-    def setup(self, method: str = "multiple_shooting", dynamics_type: str = "continuous", integrator: str = "rk4", **kwargs) -> None:
+    def setup(
+        self,
+        method: str = "multiple_shooting",
+        dynamics_type: str = "continuous",
+        integrator: str = "rk4",
+        solver: str = "ipopt",
+        plugin_opts: Optional[dict] = None,
+        solver_opts: Optional[dict] = None
+    ) -> None:
         nx = self._nx
         nu = self._nu
 
@@ -202,16 +210,21 @@ class OCP:
 
         self._opti.minimize(cost)
 
-        # Default solver options (can be customized via kwargs if needed in the future)
+        # Set up solver options
         p_opts = {"expand": True}
-        s_opts = {"max_iter": 1000, "print_level": 0}
+        s_opts = {}
 
-        if "p_opts" in kwargs:
-            p_opts.update(kwargs["p_opts"])
-        if "s_opts" in kwargs:
-            s_opts.update(kwargs["s_opts"])
+        # Add basic defaults for common ipopt usage if it's the chosen solver
+        if solver == "ipopt":
+            s_opts = {"max_iter": 1000, "print_level": 0}
 
-        self._opti.solver("ipopt", p_opts, s_opts)
+        if plugin_opts is not None:
+            p_opts.update(plugin_opts)
+
+        if solver_opts is not None:
+            s_opts.update(solver_opts)
+
+        self._opti.solver(solver, p_opts, s_opts)
 
     def solve(self, x0) -> tuple:
         """

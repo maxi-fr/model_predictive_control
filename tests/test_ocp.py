@@ -118,3 +118,17 @@ def test_ocp_solve_without_setup():
     ocp = setup_simple_ocp()
     with pytest.raises(RuntimeError, match="OCP has not been set up"):
         ocp.solve(np.array([1.0, 0.0]))
+
+def test_ocp_custom_solver_opts():
+    ocp = setup_simple_ocp()
+    # Use max_iter=2 to force a premature exit (user setting overrides default 1000)
+    plugin_opts = {"expand": False}
+    solver_opts = {"max_iter": 2}
+
+    ocp.setup(solver="ipopt", plugin_opts=plugin_opts, solver_opts=solver_opts)
+
+    x0 = np.array([10.0, 10.0]) # Hard state to solve in 2 iters
+    X_opt, U_opt, status = ocp.solve(x0)
+
+    # IPOPT should reach max iter and fail gracefully
+    assert "Maximum_Iterations_Exceeded" in status or "Solve_Failed" in status
