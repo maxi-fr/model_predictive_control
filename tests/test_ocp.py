@@ -2,7 +2,7 @@ import pytest
 import casadi as ca
 import numpy as np
 
-from model_predictive_control.ocp import OCP, Quadratic_Objective
+from model_predictive_control.ocp import OCP, quadratic_objective
 
 def setup_simple_ocp(dynamics=None, objective=None, **kwargs):
     # Simple double integrator system

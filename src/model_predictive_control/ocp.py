@@ -266,10 +266,84 @@ class OCP:
         return X_opt, U_opt, status
 
 
-def Quadratic_Objective(Q, R, q, r, N):
+def quadratic_objective(Q, R, q, r, N):
     nx = Q.shape[0]
     nu = R.shape[0]
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
 
     return ca.Function("quadr_obj", [x, u], [x.T @ Q @ x + x.T @ q + u.T @ R @ u + u.T @ r + x.T @ N @ u], ["x", "u"], ["f"])
+
+
+def linear_constraints(F, G, h):
+    nx = F.shape[1]
+    nu = G.shape[1]
+
+    if F.shape[0] != G.shape[0] or F.shape[0] != h.shape[0]:
+        raise ValueError("The number of rows in F, G, and h must be equal.")
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+
+    return ca.Function("lin_con", [x, u], [F @ x + G @ u - h], ["x", "u"], ["f"])
+
+
+def linear_dynamics(A, B):
+    nx = A.shape[1]
+    nu = B.shape[1]
+
+    if A.shape[0] != nx:
+        raise ValueError("Matrix A must be square.")
+    if B.shape[0] != nx:
+        raise ValueError("Matrix B must have the same number of rows as A.")
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+
+    return ca.Function("lin_dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
+
+
+def state_bounds_constraints(x_min, x_max, nu: int):
+    nx = x_min.shape[0]
+    if x_max.shape[0] != nx:
+        raise ValueError("x_min and x_max must have the same length.")
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+
+    return ca.Function("state_bounds", [x, u], [ca.vertcat(x_min - x, x - x_max)], ["x", "u"], ["f"])
+
+
+def control_bounds_constraints(u_min, u_max, nx: int):
+    nu = u_min.shape[0]
+    if u_max.shape[0] != nu:
+        raise ValueError("u_min and u_max must have the same length.")
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+
+    return ca.Function("control_bounds", [x, u], [ca.vertcat(u_min - u, u - u_max)], ["x", "u"], ["f"])
+
+
+def terminal_quadratic_objective(Q, q):
+    nx = Q.shape[0]
+
+    if Q.shape[1] != nx:
+        raise ValueError("Matrix Q must be square.")
+    if q.shape[0] != nx:
+        raise ValueError("Vector q must have the same length as Q.")
+
+    x = ca.MX.sym("x", nx)
+
+    return ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
+
+
+def terminal_linear_constraints(F, h):
+    nx = F.shape[1]
+
+    if F.shape[0] != h.shape[0]:
+        raise ValueError("The number of rows in F and h must be equal.")
+
+    x = ca.MX.sym("x", nx)
+
+    return ca.Function("term_lin_con", [x], [F @ x - h], ["x"], ["f"])
