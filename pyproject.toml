@@ -1,0 +1,18 @@
+[project]
+name = "model-predictive-control"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "google-labs-jules[bot]", email = "161369871+google-labs-jules[bot]@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "casadi>=3.7.2",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.8,<0.11.0"]
+build-backend = "uv_build"
