@@ -3,28 +3,37 @@ import casadi as ca
 from typing import Optional
 
 class OCP:
-    objective: ca.Function
-    dynamics: ca.Function
-    eq_constraints: Optional[ca.Function] = None
-    in_eq_constraints: Optional[ca.Function] = None
-    terminal_objective: Optional[ca.Function] = None
-    terminal_eq_constraints: Optional[ca.Function] = None
-    terminal_in_eq_constraints: Optional[ca.Function] = None
-
-    def __init__(self, N: int, dt: float):
+    def __init__(
+        self,
+        N: int,
+        dt: float,
+        objective: ca.Function,
+        dynamics: ca.Function,
+        eq_constraints: Optional[ca.Function] = None,
+        in_eq_constraints: Optional[ca.Function] = None,
+        terminal_objective: Optional[ca.Function] = None,
+        terminal_eq_constraints: Optional[ca.Function] = None,
+        terminal_in_eq_constraints: Optional[ca.Function] = None
+    ):
         self.N = N
         self.dt = dt
+        self.objective = objective
+        self.dynamics = dynamics
+        self.eq_constraints = eq_constraints
+        self.in_eq_constraints = in_eq_constraints
+        self.terminal_objective = terminal_objective
+        self.terminal_eq_constraints = terminal_eq_constraints
+        self.terminal_in_eq_constraints = terminal_in_eq_constraints
+
         self._opti: Optional[ca.Opti] = None
         self._x0_param: Optional[ca.MX] = None
         self._X: Optional[ca.MX] = None
         self._U: Optional[ca.MX] = None
 
+        self._nx, self._nu = self._validate_dimensions()
+
     def _validate_dimensions(self) -> tuple[int, int]:
         """Validates all casadi functions and returns nx and nu."""
-        if not hasattr(self, 'dynamics') or self.dynamics is None:
-            raise ValueError("OCP must have a 'dynamics' attribute defined as a casadi.Function.")
-        if not hasattr(self, 'objective') or self.objective is None:
-            raise ValueError("OCP must have an 'objective' attribute defined as a casadi.Function.")
 
         if self.dynamics.n_in() < 2:
             raise ValueError("Dynamics function must take at least two arguments (state x and control u).")
@@ -65,7 +74,8 @@ class OCP:
         return nx, nu
 
     def setup(self, method: str = "multiple_shooting", dynamics_type: str = "continuous", integrator: str = "rk4", **kwargs) -> None:
-        nx, nu = self._validate_dimensions()
+        nx = self._nx
+        nu = self._nu
 
         self._opti = ca.Opti()
         self._x0_param = self._opti.parameter(nx)
