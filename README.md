@@ -23,7 +23,7 @@ This package is designed to provide a modular, structured approach to defining d
 You can install the package directly from the repository using `pip`:
 
 ```bash
-pip install git+https://github.com/your-username/model-predictive-control.git
+pip install git+https://github.com/maxi-fr/model_predictive_control.git
 ```
 
 ### For Development
@@ -32,8 +32,8 @@ This project uses `uv` for dependency and project management. To set up the envi
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/model-predictive-control.git
-   cd model-predictive-control
+   git clone https://github.com/maxi-fr/model_predictive_control.git
+   cd model_predictive_control
    ```
 2. Sync the dependencies using `uv`:
    ```bash
