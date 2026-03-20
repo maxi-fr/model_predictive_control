@@ -558,6 +558,9 @@ requires-dist = [
     { name = "pytest", specifier = ">=9.0.2" },
 ]
 
+[package.metadata.requires-dev]
+dev = []
+
 [[package]]
 name = "nest-asyncio"
 version = "1.6.0"
