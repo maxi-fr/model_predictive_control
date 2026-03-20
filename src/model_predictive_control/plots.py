@@ -50,6 +50,86 @@ def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=Non
 
     return fig, ax
 
+def plot_mpc_trajectories(time, X_closed_loop, X_open_loop, indices=None, labels=None, fig=None, ax=None, title=None, ylabel='States', bounds=None, step_interval=1):
+    """
+    Plots the closed-loop state trajectories along with the open-loop predictions from MPC.
+
+    Args:
+        time (array-like): Time array of length (N_sim + 1).
+        X_closed_loop (array-like): Closed-loop state array of shape (nx, N_sim + 1).
+        X_open_loop (array-like): 3D array of open-loop predictions of shape (N_sim, nx, N_horizon + 1).
+            X_open_loop[k, :, :] is the prediction made at time step k.
+        indices (list, optional): List of indices of states to plot. Defaults to all.
+        labels (list, optional): List of labels for the plotted states.
+        fig (matplotlib.figure.Figure, optional): Figure to plot on.
+        ax (matplotlib.axes.Axes, optional): Axes to plot on.
+        title (str, optional): Title of the plot.
+        ylabel (str, optional): Y-axis label.
+        bounds (list of tuples, optional): List of (min, max) bounds for the plotted states.
+        step_interval (int, optional): Interval of prediction horizons to plot (e.g., plot every 5th prediction to avoid clutter).
+
+    Returns:
+        tuple: (fig, ax)
+    """
+    X_closed_loop = np.asarray(X_closed_loop)
+    X_open_loop = np.asarray(X_open_loop)
+    time = np.asarray(time)
+
+    nx = X_closed_loop.shape[0]
+    N_sim = X_open_loop.shape[0]
+    N_horizon = X_open_loop.shape[2] - 1
+
+    # Estimate dt assuming uniform time steps
+    if len(time) > 1:
+        dt = time[1] - time[0]
+    else:
+        dt = 1.0
+
+    if indices is None:
+        indices = list(range(nx))
+
+    if labels is None:
+        labels = [f'$x_{i}$' for i in indices]
+
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
+
+    # Create a unified color cycle for states
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    for i, idx in enumerate(indices):
+        color = colors[i % len(colors)]
+
+        # Plot open-loop predictions first (so they are visually behind the closed-loop line)
+        for k in range(0, N_sim, step_interval):
+            # The prediction at step k corresponds to time range [time[k], time[k] + N_horizon * dt]
+            pred_time = time[k] + np.arange(N_horizon + 1) * dt
+
+            # Plot the prediction trace. Add label only on the first iteration to avoid legend duplication
+            ax.plot(pred_time, X_open_loop[k, idx, :], color=color, alpha=0.3, linestyle='--',
+                    label=f'{labels[i]} (predictions)' if k == 0 else "")
+
+        # Plot closed-loop trajectory
+        ax.plot(time, X_closed_loop[idx, :], color=color, linewidth=2, label=f'{labels[i]} (closed-loop)')
+
+        # Plot bounds
+        if bounds is not None and i < len(bounds) and bounds[i] is not None:
+            min_val, max_val = bounds[i]
+            if min_val is not None:
+                ax.axhline(min_val, color=color, linestyle=':', label='Min Bound' if i == 0 else "")
+            if max_val is not None:
+                ax.axhline(max_val, color=color, linestyle=':', label='Max Bound' if i == 0 else "")
+
+    if title:
+        ax.set_title(title)
+
+    ax.set_xlabel('Time [s]')
+    ax.set_ylabel(ylabel)
+    ax.legend()
+    ax.grid(True)
+
+    return fig, ax
+
 
 def plot_controls(time, U, indices=None, labels=None, fig=None, ax=None, title=None, ylabel='Control', bounds=None, step=True):
     """
