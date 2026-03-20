@@ -40,6 +40,11 @@ This project uses `uv` for dependency and project management. To set up the envi
    uv sync
    ```
 
+3.  Set up pre-commit hooks (this will run linting, formatting, and tests on every commit):
+    ```bash
+    uv run pre-commit install
+    ```
+
 ## Examples
 
 Usage examples are provided as Jupyter notebooks in the `examples/` directory.
