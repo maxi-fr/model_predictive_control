@@ -31,6 +31,7 @@ build-backend = "hatchling.build"
 line-length = 120
 indent-width = 4
 target-version = "py312"
+unsafe-fixes = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -48,3 +49,7 @@ addopts = "-ra -q"
 testpaths = [
     "tests",
 ]
+
+[[tool.mypy.overrides]]
+module = "casadi.*"
+ignore_missing_imports = true
