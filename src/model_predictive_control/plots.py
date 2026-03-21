@@ -1,7 +1,23 @@
+from collections.abc import Sequence
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from numpy.typing import ArrayLike
 
-def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=None, ylabel='States', bounds=None):
+
+def plot_states(
+    time: ArrayLike,
+    X: ArrayLike,
+    indices: Sequence[int] | None = None,
+    labels: Sequence[str] | None = None,
+    fig: Figure | None = None,
+    ax: Axes | None = None,
+    title: str | None = None,
+    ylabel: str = "States",
+    bounds: Sequence[tuple[float | None, float | None] | None] | None = None,
+) -> tuple[Figure, Axes]:
     """
     Plots the states of the system over time.
 
@@ -26,7 +42,7 @@ def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=Non
         indices = list(range(nx))
 
     if labels is None:
-        labels = [f'$x_{i}$' for i in indices]
+        labels = [f"$x_{i}$" for i in indices]
 
     if fig is None or ax is None:
         fig, ax = plt.subplots()
@@ -35,11 +51,11 @@ def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=Non
         ax.plot(time, X[idx, :], label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]
+            min_val, max_val = bounds[i]  # type: ignore
             if min_val is not None:
-                ax.axhline(min_val, color='red', linestyle=':', label='Min Bound' if i == 0 else "")
+                ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
-                ax.axhline(max_val, color='red', linestyle=':', label='Max Bound' if i == 0 else "")
+                ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)
@@ -51,7 +67,18 @@ def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=Non
     return fig, ax
 
 
-def plot_controls(time, U, indices=None, labels=None, fig=None, ax=None, title=None, ylabel='Control', bounds=None, step=True):
+def plot_controls(
+    time: ArrayLike,
+    U: ArrayLike,
+    indices: Sequence[int] | None = None,
+    labels: Sequence[str] | None = None,
+    fig: Figure | None = None,
+    ax: Axes | None = None,
+    title: str | None = None,
+    ylabel: str = "Control",
+    bounds: Sequence[tuple[float | None, float | None] | None] | None = None,
+    step: bool = True,
+) -> tuple[Figure, Axes]:
     """
     Plots the controls of the system over time.
 
@@ -78,35 +105,32 @@ def plot_controls(time, U, indices=None, labels=None, fig=None, ax=None, title=N
         indices = list(range(nu))
 
     if labels is None:
-        labels = [f'$u_{i}$' for i in indices]
+        labels = [f"$u_{i}$" for i in indices]
 
     if fig is None or ax is None:
         fig, ax = plt.subplots()
 
     # Handle time array length mismatch
     # U is typically (nu, N) and time is (N+1,)
-    if len(time) == U.shape[1] + 1:
-        plot_time = time[:-1]
-    else:
-        plot_time = time
+    plot_time = time[:-1] if len(time) == U.shape[1] + 1 else time
 
     for i, idx in enumerate(indices):
         if step:
-            ax.step(plot_time, U[idx, :], label=labels[i], where='post')
+            ax.step(plot_time, U[idx, :], label=labels[i], where="post")
         else:
             ax.plot(plot_time, U[idx, :], label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]
+            min_val, max_val = bounds[i]  # type: ignore
             if min_val is not None:
-                ax.axhline(min_val, color='red', linestyle=':', label='Min Bound' if i == 0 else "")
+                ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
-                ax.axhline(max_val, color='red', linestyle=':', label='Max Bound' if i == 0 else "")
+                ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)
 
-    ax.set_xlabel('Time [s]')
+    ax.set_xlabel("Time [s]")
     ax.set_ylabel(ylabel)
     ax.legend()
     ax.grid(True)

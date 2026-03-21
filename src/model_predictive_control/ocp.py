@@ -2,6 +2,8 @@ from typing import Any
 
 import casadi as ca
 import numpy as np
+from casadi.casadi import Function
+from numpy._typing import ArrayLike
 
 
 class OCP:
@@ -241,7 +243,7 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(self, x0) -> tuple:
+    def solve(self, x0: ArrayLike) -> tuple[np.ndarray, np.ndarray, Any]:
         """
         Solves the OCP for a given initial state.
 
@@ -279,18 +281,38 @@ class OCP:
         return X_opt, U_opt, status
 
 
-def quadratic_objective(Q, R, q, r, N):
+def quadratic_objective(
+    Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
+) -> Function:
     nx = Q.shape[0]
     nu = R.shape[0]
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
+
+    if q is None:
+        q = np.zeros((nx, 1))
+    if r is None:
+        r = np.zeros((nu, 1))
+    if N is None:
+        N = np.zeros((nx, nu))
+
+    if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
+        raise ValueError("Matrix Q must be square and match state dimension.")
+    if R.shape[0] != R.shape[1] or R.shape[0] != nu:
+        raise ValueError("Matrix R must be square and match control dimension.")
+    if q.shape[0] != nx:
+        raise ValueError("Vector q must match state dimension.")
+    if r.shape[0] != nu:
+        raise ValueError("Vector r must match control dimension.")
+    if N.shape[0] != nx or N.shape[1] != nu:
+        raise ValueError("Matrix N must match state and control dimensions.")
 
     return ca.Function(
         "quadr_obj", [x, u], [x.T @ Q @ x + x.T @ q + u.T @ R @ u + u.T @ r + x.T @ N @ u], ["x", "u"], ["f"]
     )
 
 
-def linear_constraints(F, G, h):
+def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:
     nx = F.shape[1]
     nu = G.shape[1]
 
@@ -303,7 +325,7 @@ def linear_constraints(F, G, h):
     return ca.Function("lin_con", [x, u], [F @ x + G @ u - h], ["x", "u"], ["f"])
 
 
-def linear_dynamics(A, B):
+def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:
     nx = A.shape[1]
     nu = B.shape[1]
 
@@ -318,7 +340,7 @@ def linear_dynamics(A, B):
     return ca.Function("lin_dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
 
 
-def state_bounds_constraints(x_min, x_max, nu: int):
+def state_bounds_constraints(x_min: np.ndarray, x_max: np.ndarray, nu: int) -> Function:
     nx = x_min.shape[0]
     if x_max.shape[0] != nx:
         raise ValueError("x_min and x_max must have the same length.")
@@ -329,7 +351,7 @@ def state_bounds_constraints(x_min, x_max, nu: int):
     return ca.Function("state_bounds", [x, u], [ca.vertcat(x_min - x, x - x_max)], ["x", "u"], ["f"])
 
 
-def control_bounds_constraints(u_min, u_max, nx: int):
+def control_bounds_constraints(u_min: np.ndarray, u_max: np.ndarray, nx: int) -> Function:
     nu = u_min.shape[0]
     if u_max.shape[0] != nu:
         raise ValueError("u_min and u_max must have the same length.")
@@ -340,7 +362,7 @@ def control_bounds_constraints(u_min, u_max, nx: int):
     return ca.Function("control_bounds", [x, u], [ca.vertcat(u_min - u, u - u_max)], ["x", "u"], ["f"])
 
 
-def terminal_quadratic_objective(Q, q):
+def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:
     nx = Q.shape[0]
 
     if Q.shape[1] != nx:
@@ -353,7 +375,7 @@ def terminal_quadratic_objective(Q, q):
     return ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
 
 
-def terminal_linear_constraints(F, h):
+def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:
     nx = F.shape[1]
 
     if F.shape[0] != h.shape[0]:
