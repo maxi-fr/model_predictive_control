@@ -1,0 +1,7 @@
+repos:
+  - repo: https://github.com/mwouts/jupytext
+    rev: v1.16.7
+    hooks:
+      - id: jupytext
+        args: [--sync]
+        files: ^examples/.*\.ipynb$
