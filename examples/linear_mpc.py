@@ -15,21 +15,13 @@
 # %% [markdown]
 # # Closed-Loop Linear Model Predictive Control
 #
-# This notebook demonstrates a closed-loop Model Predictive Control (MPC) simulation for a simple unstable linear 2D system using the `OCP` class.
+# This notebook demonstrates a closed-loop Model Predictive Control (MPC) simulation for a simple unstable linear 2D system using the `LinearOCP` class, which uses a QP formulation.
 
 # %%
-import casadi as ca
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model_predictive_control.ocp import (
-    OCP,
-    control_bounds_constraints,
-    linear_dynamics,
-    quadratic_objective,
-    state_bounds_constraints,
-    terminal_quadratic_objective,
-)
+from model_predictive_control.mpc import LinearOCP
 from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
 
 # %% [markdown]
@@ -43,9 +35,6 @@ B = np.array([[0.0], [0.1]])
 
 nx = A.shape[1]
 nu = B.shape[1]
-
-# Create discrete dynamics function
-dynamics = linear_dynamics(A, B)
 
 # %% [markdown]
 # ## 2. Objective Function and Constraints
@@ -61,28 +50,69 @@ q_term = np.zeros(nx)
 r_term = np.zeros(nu)
 N_cross = np.zeros((nx, nu))
 
-objective = quadratic_objective(Q, R, q_term, r_term, N_cross)
-
 # Terminal objective
 Qf = np.diag([1000.0, 100.0])
-terminal_objective = terminal_quadratic_objective(Qf, q_term)
 
 # Constraints
+# F x + G u <= h
 u_max_val = 50.0
-u_min = np.array([-u_max_val])
-u_max = np.array([u_max_val])
-
 x_max_val = 2.0
+
+# Box constraints:
+# x_1 <= 2.0  ->  [1, 0] x + 0 u <= 2.0
+# -x_1 <= 2.0 -> [-1, 0] x + 0 u <= 2.0
+# x_2 <= 2.0  ->  [0, 1] x + 0 u <= 2.0
+# -x_2 <= 2.0 ->  [0, -1] x + 0 u <= 2.0
+# u <= 50.0   ->  [0, 0] x + 1 u <= 50.0
+# -u <= 50.0  ->  [0, 0] x - 1 u <= 50.0
+
+F = np.array([
+    [1.0, 0.0],
+    [-1.0, 0.0],
+    [0.0, 1.0],
+    [0.0, -1.0],
+    [0.0, 0.0],
+    [0.0, 0.0]
+])
+
+G = np.array([
+    [0.0],
+    [0.0],
+    [0.0],
+    [0.0],
+    [1.0],
+    [-1.0]
+])
+
+h = np.array([
+    x_max_val,
+    x_max_val,
+    x_max_val,
+    x_max_val,
+    u_max_val,
+    u_max_val
+])
+
+# Terminal constraints (only on state)
+F_term = np.array([
+    [1.0, 0.0],
+    [-1.0, 0.0],
+    [0.0, 1.0],
+    [0.0, -1.0]
+])
+
+h_term = np.array([
+    x_max_val,
+    x_max_val,
+    x_max_val,
+    x_max_val
+])
+
+# Bounds for plotting
 x_min = np.array([-x_max_val, -x_max_val])
 x_max = np.array([x_max_val, x_max_val])
-
-state_bounds = state_bounds_constraints(x_min, x_max, nu)
-control_bounds = control_bounds_constraints(u_min, u_max, nx)
-
-x = ca.MX.sym("x", nx)
-u = ca.MX.sym("u", nu)
-
-in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
+u_min = np.array([-u_max_val])
+u_max = np.array([u_max_val])
 
 # %% [markdown]
 # ## 3. OCP Setup and Closed-Loop Simulation
@@ -92,17 +122,27 @@ N_horizon = 20
 N_sim = 40
 dt = 0.1
 
-ocp = OCP(
+ocp = LinearOCP(
     N=N_horizon,
     dt=dt,
-    objective=objective,
-    dynamics=dynamics,
-    terminal_objective=terminal_objective,
-    in_eq_constraints=in_eq_constraints,
+    A=A,
+    B=B,
+    Q=Q,
+    R=R,
+    q_term=q_term,
+    r_term=r_term,
+    N_cross=N_cross,
+    Qf=Qf,
+    qf_term=q_term,
+    F=F,
+    G=G,
+    h=h,
+    F_term=F_term,
+    h_term=h_term
 )
 
-# Setup using multiple shooting and ipopt
-ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="ipopt", solver_opts={"print_level": 0})
+# Setup using multiple shooting (sparse) and qrqp backend
+ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="qrqp", solver_opts={"print_iter": False, "print_header": False})
 
 # Simulation loop
 x0_val = np.array([1.5, 0.0])  # Start near the bound
