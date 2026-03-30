@@ -243,7 +243,7 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(self, x0: ArrayLike) -> tuple[np.ndarray, np.ndarray, Any]:
+    def solve(self, x0: ArrayLike) -> tuple[np.ndarray, np.ndarray, str]:
         """
         Solves the OCP for a given initial state.
 
@@ -265,7 +265,7 @@ class OCP:
             sol = self._opti.solve()
             X_opt = sol.value(self._X)
             U_opt = sol.value(self._U)
-            status = sol.stats()["return_status"]
+            status: str = sol.stats()["return_status"]
         except Exception as e:
             # If solve fails, return the values at the last iteration
             X_opt = self._opti.debug.value(self._X)
