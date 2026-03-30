@@ -1,6 +1,10 @@
-import casadi as ca
+from typing import Any
 
-from typing import Optional
+import casadi as ca
+import numpy as np
+from casadi.casadi import Function
+from numpy._typing import ArrayLike
+
 
 class OCP:
     def __init__(
@@ -9,12 +13,12 @@ class OCP:
         dt: float,
         objective: ca.Function,
         dynamics: ca.Function,
-        eq_constraints: Optional[ca.Function] = None,
-        in_eq_constraints: Optional[ca.Function] = None,
-        terminal_objective: Optional[ca.Function] = None,
-        terminal_eq_constraints: Optional[ca.Function] = None,
-        terminal_in_eq_constraints: Optional[ca.Function] = None
-    ):
+        eq_constraints: ca.Function | None = None,
+        in_eq_constraints: ca.Function | None = None,
+        terminal_objective: ca.Function | None = None,
+        terminal_eq_constraints: ca.Function | None = None,
+        terminal_in_eq_constraints: ca.Function | None = None,
+    ) -> None:
         self.N = N
         self.dt = dt
         self.objective = objective
@@ -25,10 +29,10 @@ class OCP:
         self.terminal_eq_constraints = terminal_eq_constraints
         self.terminal_in_eq_constraints = terminal_in_eq_constraints
 
-        self._opti: Optional[ca.Opti] = None
-        self._x0_param: Optional[ca.MX] = None
-        self._X: Optional[ca.MX] = None
-        self._U: Optional[ca.MX] = None
+        self._opti: ca.Opti | None = None
+        self._x0_param: ca.MX | None = None
+        self._X: ca.MX | None = None
+        self._U: ca.MX | None = None
 
         self._nx, self._nu = self._validate_dimensions()
 
@@ -42,34 +46,48 @@ class OCP:
         nu = self.dynamics.size_in(1)[0]
 
         if self.dynamics.size_out(0)[0] != nx:
-            raise ValueError(f"Dynamics function output size ({self.dynamics.size_out(0)[0]}) must match state size ({nx}).")
+            raise ValueError(
+                f"Dynamics function output size ({self.dynamics.size_out(0)[0]}) must match state size ({nx})."
+            )
 
         if self.objective.size_in(0)[0] != nx or self.objective.size_in(1)[0] != nu:
             raise ValueError(f"Objective function inputs must match state ({nx}) and control ({nu}) sizes.")
         if self.objective.size_out(0)[0] != 1:
             raise ValueError("Objective function must return a scalar.")
 
-        if hasattr(self, 'eq_constraints') and self.eq_constraints is not None:
-            if self.eq_constraints.size_in(0)[0] != nx or self.eq_constraints.size_in(1)[0] != nu:
-                raise ValueError(f"eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes.")
+        if (
+            hasattr(self, "eq_constraints")
+            and self.eq_constraints is not None
+            and (self.eq_constraints.size_in(0)[0] != nx or self.eq_constraints.size_in(1)[0] != nu)
+        ):
+            raise ValueError(f"eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes.")
 
-        if hasattr(self, 'in_eq_constraints') and self.in_eq_constraints is not None:
-            if self.in_eq_constraints.size_in(0)[0] != nx or self.in_eq_constraints.size_in(1)[0] != nu:
-                raise ValueError(f"in_eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes.")
+        if (
+            hasattr(self, "in_eq_constraints")
+            and self.in_eq_constraints is not None
+            and (self.in_eq_constraints.size_in(0)[0] != nx or self.in_eq_constraints.size_in(1)[0] != nu)
+        ):
+            raise ValueError(f"in_eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes.")
 
-        if hasattr(self, 'terminal_objective') and self.terminal_objective is not None:
+        if hasattr(self, "terminal_objective") and self.terminal_objective is not None:
             if self.terminal_objective.size_in(0)[0] != nx:
                 raise ValueError(f"terminal_objective function input must match state ({nx}) size.")
             if self.terminal_objective.size_out(0)[0] != 1:
                 raise ValueError("terminal_objective function must return a scalar.")
 
-        if hasattr(self, 'terminal_eq_constraints') and self.terminal_eq_constraints is not None:
-            if self.terminal_eq_constraints.size_in(0)[0] != nx:
-                raise ValueError(f"terminal_eq_constraints function input must match state ({nx}) size.")
+        if (
+            hasattr(self, "terminal_eq_constraints")
+            and self.terminal_eq_constraints is not None
+            and (self.terminal_eq_constraints.size_in(0)[0] != nx)
+        ):
+            raise ValueError(f"terminal_eq_constraints function input must match state ({nx}) size.")
 
-        if hasattr(self, 'terminal_in_eq_constraints') and self.terminal_in_eq_constraints is not None:
-            if self.terminal_in_eq_constraints.size_in(0)[0] != nx:
-                raise ValueError(f"terminal_in_eq_constraints function input must match state ({nx}) size.")
+        if (
+            hasattr(self, "terminal_in_eq_constraints")
+            and self.terminal_in_eq_constraints is not None
+            and (self.terminal_in_eq_constraints.size_in(0)[0] != nx)
+        ):
+            raise ValueError(f"terminal_in_eq_constraints function input must match state ({nx}) size.")
 
         return nx, nu
 
@@ -79,8 +97,8 @@ class OCP:
         dynamics_type: str = "continuous",
         integrator: str = "rk4",
         solver: str = "ipopt",
-        plugin_opts: Optional[dict] = None,
-        solver_opts: Optional[dict] = None
+        plugin_opts: dict[Any, Any] | None = None,
+        solver_opts: dict[Any, Any] | None = None,
     ) -> None:
         nx = self._nx
         nu = self._nu
@@ -91,20 +109,20 @@ class OCP:
         if dynamics_type == "continuous":
             if integrator == "rk4":
                 # Runge-Kutta 4 integration
-                X0 = ca.MX.sym('X0', nx)
-                U0 = ca.MX.sym('U0', nu)
+                X0 = ca.MX.sym("X0", nx)
+                U0 = ca.MX.sym("U0", nu)
                 k1 = self.dynamics(X0, U0)
-                k2 = self.dynamics(X0 + self.dt/2.0 * k1, U0)
-                k3 = self.dynamics(X0 + self.dt/2.0 * k2, U0)
+                k2 = self.dynamics(X0 + self.dt / 2.0 * k1, U0)
+                k3 = self.dynamics(X0 + self.dt / 2.0 * k2, U0)
                 k4 = self.dynamics(X0 + self.dt * k3, U0)
-                X_next = X0 + self.dt/6.0 * (k1 + 2*k2 + 2*k3 + k4)
-                dyn_func = ca.Function('dyn_rk4', [X0, U0], [X_next])
+                X_next = X0 + self.dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+                dyn_func = ca.Function("dyn_rk4", [X0, U0], [X_next])
             else:
                 # Forward Euler
-                X0 = ca.MX.sym('X0', nx)
-                U0 = ca.MX.sym('U0', nu)
+                X0 = ca.MX.sym("X0", nx)
+                U0 = ca.MX.sym("U0", nu)
                 X_next = X0 + self.dt * self.dynamics(X0, U0)
-                dyn_func = ca.Function('dyn_euler', [X0, U0], [X_next])
+                dyn_func = ca.Function("dyn_euler", [X0, U0], [X_next])
         elif dynamics_type == "discrete":
             dyn_func = self.dynamics
         else:
@@ -112,7 +130,7 @@ class OCP:
 
         if method == "single_shooting":
             self._U = self._opti.variable(nu, self.N)
-            self._X = self._opti.variable(nx, self.N + 1) # Still define it for later extraction
+            self._X = self._opti.variable(nx, self.N + 1)  # Still define it for later extraction
 
             x_k = self._x0_param
             self._opti.subject_to(self._X[:, 0] == x_k)
@@ -132,7 +150,7 @@ class OCP:
 
                 # Dynamics
                 x_k = dyn_func(x_k, u_k)
-                self._opti.subject_to(self._X[:, k+1] == x_k) # Link to X so we can extract it easily
+                self._opti.subject_to(self._X[:, k + 1] == x_k)  # Link to X so we can extract it easily
 
         elif method == "multiple_shooting":
             self._X = self._opti.variable(nx, self.N + 1)
@@ -156,7 +174,7 @@ class OCP:
 
                 # Dynamics gap closing
                 x_next = dyn_func(x_k, u_k)
-                self._opti.subject_to(self._X[:, k+1] == x_next)
+                self._opti.subject_to(self._X[:, k + 1] == x_next)
 
         elif method == "collocation":
             if dynamics_type == "discrete":
@@ -171,7 +189,7 @@ class OCP:
             cost = 0.0
             for k in range(self.N):
                 x_k = self._X[:, k]
-                x_k_next = self._X[:, k+1]
+                x_k_next = self._X[:, k + 1]
                 u_k = self._U[:, k]
 
                 # Cost
@@ -194,8 +212,7 @@ class OCP:
                 f_c = self.dynamics(x_c, u_k)
 
                 # Simpson's rule for state integration
-                self._opti.subject_to(x_k_next == x_k + (self.dt / 6.0) * (f_k + 4*f_c + f_k_next))
-
+                self._opti.subject_to(x_k_next == x_k + (self.dt / 6.0) * (f_k + 4 * f_c + f_k_next))
         else:
             raise ValueError(f"Unknown method: {method}")
 
@@ -226,7 +243,7 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(self, x0) -> tuple:
+    def solve(self, x0: ArrayLike) -> tuple[np.ndarray, np.ndarray, str]:
         """
         Solves the OCP for a given initial state.
 
@@ -248,14 +265,12 @@ class OCP:
             sol = self._opti.solve()
             X_opt = sol.value(self._X)
             U_opt = sol.value(self._U)
-            status = sol.stats()['return_status']
+            status: str = sol.stats()["return_status"]
         except Exception as e:
             # If solve fails, return the values at the last iteration
             X_opt = self._opti.debug.value(self._X)
             U_opt = self._opti.debug.value(self._U)
             status = f"Solve_Failed: {str(e)}"
-
-        import numpy as np
 
         # Ensure 2D arrays even if nx=1 or nu=1
         if isinstance(X_opt, np.ndarray) and X_opt.ndim == 1:
@@ -266,16 +281,38 @@ class OCP:
         return X_opt, U_opt, status
 
 
-def quadratic_objective(Q, R, q, r, N):
+def quadratic_objective(
+    Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
+) -> Function:
     nx = Q.shape[0]
     nu = R.shape[0]
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
 
-    return ca.Function("quadr_obj", [x, u], [x.T @ Q @ x + x.T @ q + u.T @ R @ u + u.T @ r + x.T @ N @ u], ["x", "u"], ["f"])
+    if q is None:
+        q = np.zeros((nx, 1))
+    if r is None:
+        r = np.zeros((nu, 1))
+    if N is None:
+        N = np.zeros((nx, nu))
+
+    if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
+        raise ValueError("Matrix Q must be square and match state dimension.")
+    if R.shape[0] != R.shape[1] or R.shape[0] != nu:
+        raise ValueError("Matrix R must be square and match control dimension.")
+    if q.shape[0] != nx:
+        raise ValueError("Vector q must match state dimension.")
+    if r.shape[0] != nu:
+        raise ValueError("Vector r must match control dimension.")
+    if N.shape[0] != nx or N.shape[1] != nu:
+        raise ValueError("Matrix N must match state and control dimensions.")
+
+    return ca.Function(
+        "quadr_obj", [x, u], [x.T @ Q @ x + x.T @ q + u.T @ R @ u + u.T @ r + x.T @ N @ u], ["x", "u"], ["f"]
+    )
 
 
-def linear_constraints(F, G, h):
+def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:
     nx = F.shape[1]
     nu = G.shape[1]
 
@@ -288,7 +325,7 @@ def linear_constraints(F, G, h):
     return ca.Function("lin_con", [x, u], [F @ x + G @ u - h], ["x", "u"], ["f"])
 
 
-def linear_dynamics(A, B):
+def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:
     nx = A.shape[1]
     nu = B.shape[1]
 
@@ -303,7 +340,7 @@ def linear_dynamics(A, B):
     return ca.Function("lin_dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
 
 
-def state_bounds_constraints(x_min, x_max, nu: int):
+def state_bounds_constraints(x_min: np.ndarray, x_max: np.ndarray, nu: int) -> Function:
     nx = x_min.shape[0]
     if x_max.shape[0] != nx:
         raise ValueError("x_min and x_max must have the same length.")
@@ -314,7 +351,7 @@ def state_bounds_constraints(x_min, x_max, nu: int):
     return ca.Function("state_bounds", [x, u], [ca.vertcat(x_min - x, x - x_max)], ["x", "u"], ["f"])
 
 
-def control_bounds_constraints(u_min, u_max, nx: int):
+def control_bounds_constraints(u_min: np.ndarray, u_max: np.ndarray, nx: int) -> Function:
     nu = u_min.shape[0]
     if u_max.shape[0] != nu:
         raise ValueError("u_min and u_max must have the same length.")
@@ -325,7 +362,7 @@ def control_bounds_constraints(u_min, u_max, nx: int):
     return ca.Function("control_bounds", [x, u], [ca.vertcat(u_min - u, u - u_max)], ["x", "u"], ["f"])
 
 
-def terminal_quadratic_objective(Q, q):
+def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:
     nx = Q.shape[0]
 
     if Q.shape[1] != nx:
@@ -338,7 +375,7 @@ def terminal_quadratic_objective(Q, q):
     return ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
 
 
-def terminal_linear_constraints(F, h):
+def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:
     nx = F.shape[1]
 
     if F.shape[0] != h.shape[0]:

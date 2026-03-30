@@ -5,3 +5,44 @@ repos:
       - id: jupytext
         args: [--sync]
         files: ^examples/.*\.ipynb$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^examples/
+      - id: end-of-file-fixer
+        exclude: ^examples/
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      - id: ruff
+        args: [ --fix ]
+        exclude: ^examples/.*\.py$
+      - id: ruff-format
+        exclude: ^examples/.*\.py$
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        exclude: ^examples/.*\.py$
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.5.21
+    hooks:
+      # Update the requirements.txt if pyproject.toml changes
+      - id: uv-export
+        args: ["--frozen", "--output-file=requirements.txt", "--quiet"]
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: uv run pytest
+        language: system
+        pass_filenames: false
+        always_run: true

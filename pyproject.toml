@@ -17,9 +17,51 @@ dependencies = [
     "pytest>=9.0.2",
 ]
 
-[build-system]
-requires = ["uv_build>=0.10.8,<0.11.0"]
-build-backend = "uv_build"
-
 [dependency-groups]
-dev = []
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.3.0",
+    "pre-commit>=3.0.0",
+    "mypy>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py312"
+unsafe-fixes = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = true
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+
+[[tool.mypy.overrides]]
+module = "casadi.*"
+ignore_missing_imports = true
+
+[tool.mypy]
+# The 'strict' flag is a shortcut for about 15 individual flags
+strict = true
+
+# If you want to be surgical instead of using 'strict = true',
+# these are the two specifically for your example:
+disallow_untyped_defs = true          # Reports 'def f(x):' as an error
+disallow_incomplete_defs = true       # Reports 'def f(x: int):' (missing return type)
+check_untyped_defs = true             # Even if the 'def' is untyped, check the body

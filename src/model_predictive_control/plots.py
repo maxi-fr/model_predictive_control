@@ -1,7 +1,23 @@
+from collections.abc import Sequence
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from numpy.typing import ArrayLike
 
-def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=None, ylabel='States', bounds=None):
+
+def plot_states(
+    time: ArrayLike,
+    X: ArrayLike,
+    indices: Sequence[int] | None = None,
+    labels: Sequence[str] | None = None,
+    fig: Figure | None = None,
+    ax: Axes | None = None,
+    title: str | None = None,
+    ylabel: str = "States",
+    bounds: Sequence[tuple[float | None, float | None] | None] | None = None,
+) -> tuple[Figure, Axes]:
     """
     Plots the states of the system over time.
 
@@ -26,7 +42,7 @@ def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=Non
         indices = list(range(nx))
 
     if labels is None:
-        labels = [f'$x_{i}$' for i in indices]
+        labels = [f"$x_{i}$" for i in indices]
 
     if fig is None or ax is None:
         fig, ax = plt.subplots()
@@ -35,11 +51,11 @@ def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=Non
         ax.plot(time, X[idx, :], label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]
+            min_val, max_val = bounds[i]  # type: ignore
             if min_val is not None:
-                ax.axhline(min_val, color='red', linestyle=':', label='Min Bound' if i == 0 else "")
+                ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
-                ax.axhline(max_val, color='red', linestyle=':', label='Max Bound' if i == 0 else "")
+                ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)
@@ -50,7 +66,20 @@ def plot_states(time, X, indices=None, labels=None, fig=None, ax=None, title=Non
 
     return fig, ax
 
-def plot_mpc_trajectories(time, X_closed_loop, X_open_loop, indices=None, labels=None, fig=None, ax=None, title=None, ylabel='States', bounds=None, step_interval=1):
+
+def plot_mpc_trajectories(
+    time: ArrayLike,
+    X_closed_loop: ArrayLike,
+    X_open_loop: ArrayLike,
+    indices: Sequence[int] | None = None,
+    labels: Sequence[str] | None = None,
+    fig: Figure | None = None,
+    ax: Axes | None = None,
+    title: str | None = None,
+    ylabel: str = "States",
+    bounds: Sequence[tuple[float | None, float | None] | None] | None = None,
+    step_interval: int = 1,
+) -> tuple[Figure, Axes]:
     """
     Plots the closed-loop state trajectories along with the open-loop predictions from MPC.
 
@@ -66,7 +95,8 @@ def plot_mpc_trajectories(time, X_closed_loop, X_open_loop, indices=None, labels
         title (str, optional): Title of the plot.
         ylabel (str, optional): Y-axis label.
         bounds (list of tuples, optional): List of (min, max) bounds for the plotted states.
-        step_interval (int, optional): Interval of prediction horizons to plot (e.g., plot every 5th prediction to avoid clutter).
+        step_interval (int, optional):  Interval of prediction horizons to plot
+                                        (e.g., plot every 5th prediction to avoid clutter).
 
     Returns:
         tuple: (fig, ax)
@@ -80,22 +110,19 @@ def plot_mpc_trajectories(time, X_closed_loop, X_open_loop, indices=None, labels
     N_horizon = X_open_loop.shape[2] - 1
 
     # Estimate dt assuming uniform time steps
-    if len(time) > 1:
-        dt = time[1] - time[0]
-    else:
-        dt = 1.0
+    dt = time[1] - time[0] if len(time) > 1 else 1.0
 
     if indices is None:
         indices = list(range(nx))
 
     if labels is None:
-        labels = [f'$x_{i}$' for i in indices]
+        labels = [f"$x_{i}$" for i in indices]
 
     if fig is None or ax is None:
         fig, ax = plt.subplots()
 
     # Create a unified color cycle for states
-    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
     for i, idx in enumerate(indices):
         color = colors[i % len(colors)]
@@ -106,24 +133,30 @@ def plot_mpc_trajectories(time, X_closed_loop, X_open_loop, indices=None, labels
             pred_time = time[k] + np.arange(N_horizon + 1) * dt
 
             # Plot the prediction trace. Add label only on the first iteration to avoid legend duplication
-            ax.plot(pred_time, X_open_loop[k, idx, :], color=color, alpha=0.3, linestyle='--',
-                    label=f'{labels[i]} (predictions)' if k == 0 else "")
+            ax.plot(
+                pred_time,
+                X_open_loop[k, idx, :],
+                color=color,
+                alpha=0.3,
+                linestyle="--",
+                label=f"{labels[i]} (predictions)" if k == 0 else "",
+            )
 
         # Plot closed-loop trajectory
-        ax.plot(time, X_closed_loop[idx, :], color=color, linewidth=2, label=f'{labels[i]} (closed-loop)')
+        ax.plot(time, X_closed_loop[idx, :], color=color, linewidth=2, label=f"{labels[i]} (closed-loop)")
 
         # Plot bounds
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]
+            min_val, max_val = bounds[i]  # type: ignore
             if min_val is not None:
-                ax.axhline(min_val, color=color, linestyle=':', label='Min Bound' if i == 0 else "")
+                ax.axhline(min_val, color=color, linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
-                ax.axhline(max_val, color=color, linestyle=':', label='Max Bound' if i == 0 else "")
+                ax.axhline(max_val, color=color, linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)
 
-    ax.set_xlabel('Time [s]')
+    ax.set_xlabel("Time [s]")
     ax.set_ylabel(ylabel)
     ax.legend()
     ax.grid(True)
@@ -131,7 +164,18 @@ def plot_mpc_trajectories(time, X_closed_loop, X_open_loop, indices=None, labels
     return fig, ax
 
 
-def plot_controls(time, U, indices=None, labels=None, fig=None, ax=None, title=None, ylabel='Control', bounds=None, step=True):
+def plot_controls(
+    time: ArrayLike,
+    U: ArrayLike,
+    indices: Sequence[int] | None = None,
+    labels: Sequence[str] | None = None,
+    fig: Figure | None = None,
+    ax: Axes | None = None,
+    title: str | None = None,
+    ylabel: str = "Control",
+    bounds: Sequence[tuple[float | None, float | None] | None] | None = None,
+    step: bool = True,
+) -> tuple[Figure, Axes]:
     """
     Plots the controls of the system over time.
 
@@ -158,35 +202,32 @@ def plot_controls(time, U, indices=None, labels=None, fig=None, ax=None, title=N
         indices = list(range(nu))
 
     if labels is None:
-        labels = [f'$u_{i}$' for i in indices]
+        labels = [f"$u_{i}$" for i in indices]
 
     if fig is None or ax is None:
         fig, ax = plt.subplots()
 
     # Handle time array length mismatch
     # U is typically (nu, N) and time is (N+1,)
-    if len(time) == U.shape[1] + 1:
-        plot_time = time[:-1]
-    else:
-        plot_time = time
+    plot_time = time[:-1] if len(time) == U.shape[1] + 1 else time
 
     for i, idx in enumerate(indices):
         if step:
-            ax.step(plot_time, U[idx, :], label=labels[i], where='post')
+            ax.step(plot_time, U[idx, :], label=labels[i], where="post")
         else:
             ax.plot(plot_time, U[idx, :], label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]
+            min_val, max_val = bounds[i]  # type: ignore
             if min_val is not None:
-                ax.axhline(min_val, color='red', linestyle=':', label='Min Bound' if i == 0 else "")
+                ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
-                ax.axhline(max_val, color='red', linestyle=':', label='Max Bound' if i == 0 else "")
+                ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)
 
-    ax.set_xlabel('Time [s]')
+    ax.set_xlabel("Time [s]")
     ax.set_ylabel(ylabel)
     ax.legend()
     ax.grid(True)
