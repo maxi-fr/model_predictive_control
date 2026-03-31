@@ -186,11 +186,11 @@ def test_linearize_method() -> None:
     R_expected = np.array([[2.0]])
     N_cross_expected = np.array([[1.0], [0.0]])
 
-    np.testing.assert_allclose(lin_ocp.A[0], A_expected, atol=1e-5)
-    np.testing.assert_allclose(lin_ocp.B[0], B_expected, atol=1e-5)
-    np.testing.assert_allclose(lin_ocp.Q[0], Q_expected, atol=1e-5)
-    np.testing.assert_allclose(lin_ocp.R[0], R_expected, atol=1e-5)
-    np.testing.assert_allclose(lin_ocp.N_cross[0], N_cross_expected, atol=1e-5)
+    np.testing.assert_allclose(lin_ocp.A[0], A_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.B[0], B_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.Q[0], Q_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.R[0], R_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.N_cross[0], N_cross_expected, atol=1e-10)
 
 
 def test_linearize_equivalence() -> None:
@@ -238,8 +238,8 @@ def test_linearize_equivalence() -> None:
     X_lin, U_lin, status_lin = lin_ocp.solve(np.array([1.0, 0.0]))
     assert status_lin == "success"
 
-    np.testing.assert_allclose(X_nl, X_lin, atol=1e-5)
-    np.testing.assert_allclose(U_nl, U_lin, atol=1e-5)
+    np.testing.assert_allclose(X_nl, X_lin, atol=1e-10)
+    np.testing.assert_allclose(U_nl, U_lin, atol=1e-10)
 
 
 def solve_riccati(
@@ -313,5 +313,5 @@ def test_riccati_equivalence() -> None:
         U_ric[:, k] = -K_gains[k] @ X_ric[:, k]
         X_ric[:, k + 1] = A @ X_ric[:, k] + B @ U_ric[:, k]
 
-    np.testing.assert_allclose(X_lin, X_ric, atol=1e-5)
-    np.testing.assert_allclose(U_lin, U_ric, atol=1e-5)
+    np.testing.assert_allclose(X_lin, X_ric, atol=1e-10)
+    np.testing.assert_allclose(U_lin, U_ric, atol=1e-10)
