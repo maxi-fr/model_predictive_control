@@ -7,7 +7,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.16.7
 #   kernelspec:
-#     display_name: .venv
+#     display_name: model-predictive-control (3.12.1)
 #     language: python
 #     name: python3
 # ---
@@ -46,8 +46,8 @@ nu = B.shape[1]
 Q = np.diag([100.0, 10.0])
 R = np.array([[0.1]])
 
-q_term = np.zeros(nx)
-r_term = np.zeros(nu)
+q = np.zeros(nx)
+r = np.zeros(nu)
 N_cross = np.zeros((nx, nu))
 
 # Terminal objective
@@ -98,11 +98,11 @@ ocp = LinearOCP(
     B=B,
     Q=Q,
     R=R,
-    q_term=q_term,
-    r_term=r_term,
+    q=q,
+    r=r,
     N_cross=N_cross,
     Qf=Qf,
-    qf_term=q_term,
+    qf=q,
     F=F,
     G=G,
     h=h,

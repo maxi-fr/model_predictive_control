@@ -92,6 +92,185 @@ class OCP:
 
         return nx, nu
 
+    def linearize(
+        self, x_bar: ArrayLike, u_bar: ArrayLike, dynamics_type: str = "continuous", integrator: str = "rk4"
+    ) -> "LinearOCP":
+        """
+        Linearizes the OCP around a nominal state and control trajectory (or fixed point)
+        and returns a LinearOCP instance.
+        """
+        x_bar = np.asarray(x_bar, dtype=float)
+        u_bar = np.asarray(u_bar, dtype=float)
+
+        nx = self._nx
+        nu = self._nu
+        N = self.N
+
+        if x_bar.ndim == 1:
+            if x_bar.shape[0] != nx:
+                raise ValueError(f"x_bar fixed point must have size {nx}")
+            X_bar = np.tile(x_bar, (N + 1, 1))
+        else:
+            if x_bar.shape != (N + 1, nx):
+                raise ValueError(f"x_bar trajectory must have shape ({N + 1}, {nx})")
+            X_bar = x_bar
+
+        if u_bar.ndim == 1:
+            if u_bar.shape[0] != nu:
+                raise ValueError(f"u_bar fixed point must have size {nu}")
+            U_bar = np.tile(u_bar, (N, 1))
+        else:
+            if u_bar.shape != (N, nu):
+                raise ValueError(f"u_bar trajectory must have shape ({N}, {nu})")
+            U_bar = u_bar
+
+        if dynamics_type == "continuous":
+            if integrator == "rk4":
+                # Runge-Kutta 4 integration
+                X0 = ca.MX.sym("X0", nx)
+                U0 = ca.MX.sym("U0", nu)
+                k1 = self.dynamics(X0, U0)
+                k2 = self.dynamics(X0 + self.dt / 2.0 * k1, U0)
+                k3 = self.dynamics(X0 + self.dt / 2.0 * k2, U0)
+                k4 = self.dynamics(X0 + self.dt * k3, U0)
+                X_next = X0 + self.dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+                dyn_func = ca.Function("dyn_rk4", [X0, U0], [X_next])
+            else:
+                # Forward Euler
+                X0 = ca.MX.sym("X0", nx)
+                U0 = ca.MX.sym("U0", nu)
+                X_next = X0 + self.dt * self.dynamics(X0, U0)
+                dyn_func = ca.Function("dyn_euler", [X0, U0], [X_next])
+        elif dynamics_type == "discrete":
+            dyn_func = self.dynamics
+        else:
+            raise ValueError(f"Unknown dynamics_type: {dynamics_type}")
+
+        # Dynamics symbolic derivatives
+        x_sym = ca.MX.sym("x", nx)
+        u_sym = ca.MX.sym("u", nu)
+
+        f_val = dyn_func(x_sym, u_sym)
+        A_func = ca.Function("A", [x_sym, u_sym], [ca.jacobian(f_val, x_sym)])
+        B_func = ca.Function("B", [x_sym, u_sym], [ca.jacobian(f_val, u_sym)])
+
+        # Objective symbolic derivatives
+        L_val = self.objective(x_sym, u_sym)
+        q_func = ca.Function("q", [x_sym, u_sym], [ca.jacobian(L_val, x_sym).T])
+        r_func = ca.Function("r", [x_sym, u_sym], [ca.jacobian(L_val, u_sym).T])
+        Q_func = ca.Function("Q", [x_sym, u_sym], [ca.hessian(L_val, x_sym)[0]])
+        R_func = ca.Function("R", [x_sym, u_sym], [ca.hessian(L_val, u_sym)[0]])
+
+        # N_cross is partial^2 L / (partial x partial u)
+        grad_x = ca.jacobian(L_val, x_sym)
+        N_cross_func = ca.Function("N_cross", [x_sym, u_sym], [ca.jacobian(grad_x, u_sym)])
+
+        # Stage constraints
+        C_funcs = []
+        if self.in_eq_constraints is not None:
+            C_val = self.in_eq_constraints(x_sym, u_sym)
+            C_funcs.append(C_val)
+        if self.eq_constraints is not None:
+            E_val = self.eq_constraints(x_sym, u_sym)
+            C_funcs.append(E_val)
+            C_funcs.append(-E_val)
+
+        has_stage_constraints = False
+        nc = 0
+        if len(C_funcs) > 0:
+            C_total = ca.vertcat(*C_funcs)
+            F_func = ca.Function("F", [x_sym, u_sym], [ca.jacobian(C_total, x_sym)])
+            G_func = ca.Function("G", [x_sym, u_sym], [ca.jacobian(C_total, u_sym)])
+            h_func_val = ca.Function("h_val", [x_sym, u_sym], [-C_total])
+            has_stage_constraints = True
+            nc = C_total.shape[0]
+
+        # Arrays for the linear OCP
+        A = np.zeros((N, nx, nx))
+        B = np.zeros((N, nx, nu))
+        Q = np.zeros((N, nx, nx))
+        R = np.zeros((N, nu, nu))
+        N_cross = np.zeros((N, nx, nu))
+        q = np.zeros((N, nx))
+        r = np.zeros((N, nu))
+
+        if has_stage_constraints:
+            F = np.zeros((N, nc, nx))
+            G = np.zeros((N, nc, nu))
+            h = np.zeros((N, nc))
+        else:
+            F, G, h = None, None, None
+
+        for k in range(N):
+            xk = X_bar[k]
+            uk = U_bar[k]
+
+            A[k] = np.array(A_func(xk, uk))
+            B[k] = np.array(B_func(xk, uk))
+            Q[k] = np.array(Q_func(xk, uk))
+            R[k] = np.array(R_func(xk, uk))
+            N_cross[k] = np.array(N_cross_func(xk, uk))
+            q[k] = np.array(q_func(xk, uk)).flatten()
+            r[k] = np.array(r_func(xk, uk)).flatten()
+
+            if has_stage_constraints:
+                F[k] = np.array(F_func(xk, uk))
+                G[k] = np.array(G_func(xk, uk))
+                h[k] = np.array(h_func_val(xk, uk)).flatten()
+
+        # Terminal cost
+        x_N_sym = ca.MX.sym("x_N", nx)
+        if self.terminal_objective is not None:
+            L_term_val = self.terminal_objective(x_N_sym)
+            qf_func = ca.Function("qf", [x_N_sym], [ca.jacobian(L_term_val, x_N_sym).T])
+            Qf_func = ca.Function("Qf", [x_N_sym], [ca.hessian(L_term_val, x_N_sym)[0]])
+
+            xN = X_bar[N]
+            Qf = np.array(Qf_func(xN))
+            qf = np.array(qf_func(xN)).flatten()
+        else:
+            Qf = np.zeros((nx, nx))
+            qf = np.zeros(nx)
+
+        # Terminal constraints
+        C_term_funcs = []
+        if self.terminal_in_eq_constraints is not None:
+            C_term_funcs.append(self.terminal_in_eq_constraints(x_N_sym))
+        if self.terminal_eq_constraints is not None:
+            E_term_val = self.terminal_eq_constraints(x_N_sym)
+            C_term_funcs.append(E_term_val)
+            C_term_funcs.append(-E_term_val)
+
+        if len(C_term_funcs) > 0:
+            C_term_total = ca.vertcat(*C_term_funcs)
+            F_term_func = ca.Function("F_term", [x_N_sym], [ca.jacobian(C_term_total, x_N_sym)])
+            h_term_func_val = ca.Function("h_term_val", [x_N_sym], [-C_term_total])
+
+            xN = X_bar[N]
+            F_term = np.array(F_term_func(xN))
+            h_term = np.array(h_term_func_val(xN)).flatten()
+        else:
+            F_term, h_term = None, None
+
+        return LinearOCP(
+            N=N,
+            dt=self.dt,
+            A=A,
+            B=B,
+            Q=Q,
+            R=R,
+            q=q,
+            r=r,
+            N_cross=N_cross,
+            Qf=Qf,
+            qf=qf,
+            F=F,
+            G=G,
+            h=h,
+            F_term=F_term,
+            h_term=h_term,
+        )
+
     def setup(
         self,
         method: str = "multiple_shooting",
@@ -396,11 +575,11 @@ class LinearOCP:
         B: np.ndarray,
         Q: np.ndarray,
         R: np.ndarray,
-        q_term: np.ndarray | None = None,
-        r_term: np.ndarray | None = None,
+        q: np.ndarray | None = None,
+        r: np.ndarray | None = None,
         N_cross: np.ndarray | None = None,
         Qf: np.ndarray | None = None,
-        qf_term: np.ndarray | None = None,
+        qf: np.ndarray | None = None,
         F: np.ndarray | None = None,
         G: np.ndarray | None = None,
         h: np.ndarray | None = None,
@@ -410,8 +589,8 @@ class LinearOCP:
         """
         Initializes a Linear Optimal Control Problem.
 
-        Cost stage: 0.5 * (x^T Q x + u^T R u) + x^T N_cross u + q_term^T x + r_term^T u
-        Terminal cost: 0.5 * x_N^T Qf x_N + qf_term^T x_N
+        Cost stage: 0.5 * (x^T Q x + u^T R u) + x^T N_cross u + q^T x + r^T u
+        Terminal cost: 0.5 * x_N^T Qf x_N + qf^T x_N
         Dynamics: x_{k+1} = A x_k + B u_k
         Constraints: F x_k + G u_k <= h
         Terminal constraints: F_term x_N <= h_term
@@ -421,25 +600,37 @@ class LinearOCP:
 
         self.A = np.asarray(A, dtype=float)
         self.B = np.asarray(B, dtype=float)
-        self.nx = self.A.shape[0]
-        self.nu = self.B.shape[1]
+
+        self.nx = self.A.shape[-1]
+        self.nu = self.B.shape[-1]
 
         self.Q = np.asarray(Q, dtype=float)
         self.R = np.asarray(R, dtype=float)
 
-        self.q_term = np.zeros(self.nx) if q_term is None else np.asarray(q_term, dtype=float)
-        self.r_term = np.zeros(self.nu) if r_term is None else np.asarray(r_term, dtype=float)
-        self.N_cross = np.zeros((self.nx, self.nu)) if N_cross is None else np.asarray(N_cross, dtype=float)
+        if q is None:
+            self.q = np.zeros(self.nx) if self.Q.ndim == 2 else np.zeros((self.N, self.nx))
+        else:
+            self.q = np.asarray(q, dtype=float)
 
-        self.Qf = self.Q.copy() if Qf is None else np.asarray(Qf, dtype=float)
-        self.qf_term = self.q_term.copy() if qf_term is None else np.asarray(qf_term, dtype=float)
+        if r is None:
+            self.r = np.zeros(self.nu) if self.R.ndim == 2 else np.zeros((self.N, self.nu))
+        else:
+            self.r = np.asarray(r, dtype=float)
+
+        if N_cross is None:
+            self.N_cross = np.zeros((self.nx, self.nu)) if self.Q.ndim == 2 else np.zeros((self.N, self.nx, self.nu))
+        else:
+            self.N_cross = np.asarray(N_cross, dtype=float)
+
+        self.Qf = (self.Q if self.Q.ndim == 2 else self.Q[-1]).copy() if Qf is None else np.asarray(Qf, dtype=float)
+        self.qf = (self.q if self.q.ndim == 1 else self.q[-1]).copy() if qf is None else np.asarray(qf, dtype=float)
 
         self.F = None if F is None else np.asarray(F, dtype=float)
         self.G = None if G is None else np.asarray(G, dtype=float)
-        self.h = None if h is None else np.asarray(h, dtype=float).flatten()
+        self.h = None if h is None else np.asarray(h, dtype=float)
 
         self.F_term = None if F_term is None else np.asarray(F_term, dtype=float)
-        self.h_term = None if h_term is None else np.asarray(h_term, dtype=float).flatten()
+        self.h_term = None if h_term is None else np.asarray(h_term, dtype=float)
 
         self._validate_dimensions()
 
@@ -450,42 +641,39 @@ class LinearOCP:
         # We will save the parametric pieces of the QP to form arguments quickly in solve()
         self._qp_setup: dict[str, Any] = {}
 
+    def _is_time_varying(self, arr: np.ndarray, expected_dims: int) -> bool:
+        return bool(arr.ndim == expected_dims + 1 and arr.shape[0] == self.N)
+
     def _validate_dimensions(self) -> None:
         nx = self.nx
         nu = self.nu
+        N = self.N
 
-        if self.A.shape != (nx, nx):
-            raise ValueError(f"Matrix A must be ({nx}, {nx})")
-        if self.B.shape != (nx, nu):
-            raise ValueError(f"Matrix B must be ({nx}, {nu})")
+        def check_shape(arr: np.ndarray, base_shape: tuple[int, ...], name: str) -> None:
+            if arr.shape != base_shape and arr.shape != (N,) + base_shape:
+                raise ValueError(f"Array {name} must be {base_shape} or {(N,) + base_shape}")
 
-        if self.Q.shape != (nx, nx):
-            raise ValueError(f"Matrix Q must be ({nx}, {nx})")
-        if self.R.shape != (nu, nu):
-            raise ValueError(f"Matrix R must be ({nu}, {nu})")
-
-        if self.q_term.shape != (nx,):
-            raise ValueError(f"Vector q_term must be ({nx},)")
-        if self.r_term.shape != (nu,):
-            raise ValueError(f"Vector r_term must be ({nu},)")
-        if self.N_cross.shape != (nx, nu):
-            raise ValueError(f"Matrix N_cross must be ({nx}, {nu})")
+        check_shape(self.A, (nx, nx), "A")
+        check_shape(self.B, (nx, nu), "B")
+        check_shape(self.Q, (nx, nx), "Q")
+        check_shape(self.R, (nu, nu), "R")
+        check_shape(self.q, (nx,), "q")
+        check_shape(self.r, (nu,), "r")
+        check_shape(self.N_cross, (nx, nu), "N_cross")
 
         if self.Qf.shape != (nx, nx):
             raise ValueError(f"Matrix Qf must be ({nx}, {nx})")
-        if self.qf_term.shape != (nx,):
-            raise ValueError(f"Vector qf_term must be ({nx},)")
+        if self.qf.shape != (nx,):
+            raise ValueError(f"Vector qf must be ({nx},)")
 
         if self.F is not None or self.G is not None or self.h is not None:
             if self.F is None or self.G is None or self.h is None:
                 raise ValueError("If any of F, G, h are provided, all three must be provided.")
-            nc = self.F.shape[0]
-            if self.F.shape != (nc, nx):
-                raise ValueError(f"Matrix F must be ({nc}, {nx})")
-            if self.G.shape != (nc, nu):
-                raise ValueError(f"Matrix G must be ({nc}, {nu})")
-            if self.h.shape != (nc,):
-                raise ValueError(f"Vector h must be ({nc},)")
+
+            nc = self.F.shape[-2]
+            check_shape(self.F, (nc, nx), "F")
+            check_shape(self.G, (nc, nu), "G")
+            check_shape(self.h, (nc,), "h")
 
         if self.F_term is not None or self.h_term is not None:
             if self.F_term is None or self.h_term is None:
@@ -495,6 +683,41 @@ class LinearOCP:
                 raise ValueError(f"Matrix F_term must be ({nc_term}, {nx})")
             if self.h_term.shape != (nc_term,):
                 raise ValueError(f"Vector h_term must be ({nc_term},)")
+
+    def _get_at_k(self, arr: np.ndarray, k: int) -> np.ndarray:
+        if arr is None:
+            return None
+        # If the array has the time dimension, extract k-th slice
+        # e.g., if A is (N, nx, nx) -> A.ndim == 3 -> returns A[k]
+        # if A is (nx, nx) -> A.ndim == 2 -> returns A
+
+        # Determine the base dimensions based on the attribute
+        # For matrices like A, B, Q, R, N_cross, F, G, it's 2
+        # For vectors like q, r, h, it's 1
+        1 if len(arr.shape) == 1 or (
+            len(arr.shape) == 2 and arr.shape[0] == self.N and arr.shape[1] != self.N and arr.shape[1] != arr.shape[0]
+        ) else 2
+        # Actually better to rely on known attributes
+
+        arr.shape[-1] == self.nx or arr.shape[-1] == self.nu or (self.h is not None and np.array_equal(arr, self.h))
+        if len(arr.shape) == 1:
+            return arr
+        elif len(arr.shape) == 2:
+            if arr.shape[0] == self.N and arr.shape[1] in (self.nx, self.nu) and not np.array_equal(arr, self.A):
+                # Time-varying vector
+                return arr[k]
+            elif self.h is not None and np.array_equal(arr, self.h):
+                if arr.shape[0] == self.N:
+                    return arr[k]
+                else:
+                    return arr
+            else:
+                # Constant matrix
+                return arr
+        elif len(arr.shape) == 3:
+            # Time-varying matrix
+            return arr[k]
+        return arr
 
     def setup(
         self,
@@ -515,18 +738,25 @@ class LinearOCP:
         nu = self.nu
         N = self.N
 
-        if dynamics_type == "continuous":
-            M = np.zeros((nx + nu, nx + nu))
-            M[:nx, :nx] = self.A
-            M[:nx, nx:] = self.B
-            M_d = scipy.linalg.expm(M * self.dt)
-            A_d = M_d[:nx, :nx]
-            B_d = M_d[:nx, nx:]
-        elif dynamics_type == "discrete":
-            A_d = self.A
-            B_d = self.B
-        else:
-            raise ValueError(f"Unknown dynamics_type: {dynamics_type}")
+        # Compute A_d and B_d for all k
+        A_d_list = []
+        B_d_list = []
+        for k in range(N):
+            Ak = self.A[k] if self.A.ndim == 3 else self.A
+            Bk = self.B[k] if self.B.ndim == 3 else self.B
+
+            if dynamics_type == "continuous":
+                M = np.zeros((nx + nu, nx + nu))
+                M[:nx, :nx] = Ak
+                M[:nx, nx:] = Bk
+                M_d = scipy.linalg.expm(M * self.dt)
+                A_d_list.append(M_d[:nx, :nx])
+                B_d_list.append(M_d[:nx, nx:])
+            elif dynamics_type == "discrete":
+                A_d_list.append(Ak)
+                B_d_list.append(Bk)
+            else:
+                raise ValueError(f"Unknown dynamics_type: {dynamics_type}")
 
         # "expand" is for nlpsol, conic doesn't need it.
         p_opts = {}
@@ -543,20 +773,26 @@ class LinearOCP:
             g_vec = np.zeros(n_vars)
 
             for k in range(N):
+                Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
+                Rk = self.R[k] if self.R.ndim == 3 else self.R
+                N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+                qk = self.q[k] if self.q.ndim == 2 else self.q
+                rk = self.r[k] if self.r.ndim == 2 else self.r
+
                 idx_x = k * (nx + nu)
                 idx_u = idx_x + nx
-                H_sp[idx_x : idx_x + nx, idx_x : idx_x + nx] = self.Q
-                H_sp[idx_u : idx_u + nu, idx_u : idx_u + nu] = self.R
-                if np.any(self.N_cross):
-                    H_sp[idx_x : idx_x + nx, idx_u : idx_u + nu] = self.N_cross
-                    H_sp[idx_u : idx_u + nu, idx_x : idx_x + nx] = self.N_cross.T
+                H_sp[idx_x : idx_x + nx, idx_x : idx_x + nx] = Qk
+                H_sp[idx_u : idx_u + nu, idx_u : idx_u + nu] = Rk
+                if np.any(N_cross_k):
+                    H_sp[idx_x : idx_x + nx, idx_u : idx_u + nu] = N_cross_k
+                    H_sp[idx_u : idx_u + nu, idx_x : idx_x + nx] = N_cross_k.T
 
-                g_vec[idx_x : idx_x + nx] = self.q_term
-                g_vec[idx_u : idx_u + nu] = self.r_term
+                g_vec[idx_x : idx_x + nx] = qk
+                g_vec[idx_u : idx_u + nu] = rk
 
             idx_xN = N * (nx + nu)
             H_sp[idx_xN : idx_xN + nx, idx_xN : idx_xN + nx] = self.Qf
-            g_vec[idx_xN : idx_xN + nx] = self.qf_term
+            g_vec[idx_xN : idx_xN + nx] = self.qf
 
             n_eq = (N + 1) * nx
             A_eq = np.zeros((n_eq, n_vars))
@@ -569,16 +805,17 @@ class LinearOCP:
                 idx_u = idx_x + nx
                 idx_x_next = (k + 1) * (nx + nu)
 
-                A_eq[row_idx : row_idx + nx, idx_x : idx_x + nx] = -A_d
-                A_eq[row_idx : row_idx + nx, idx_u : idx_u + nu] = -B_d
+                A_eq[row_idx : row_idx + nx, idx_x : idx_x + nx] = -A_d_list[k]
+                A_eq[row_idx : row_idx + nx, idx_u : idx_u + nu] = -B_d_list[k]
                 A_eq[row_idx : row_idx + nx, idx_x_next : idx_x_next + nx] = np.eye(nx)
 
             n_ineq = 0
-            nc = 0
             nc_term = 0
             if self.F is not None:
-                nc = self.F.shape[0]
-                n_ineq += N * nc
+                if self.F.ndim == 3:
+                    n_ineq += sum(self.F[k].shape[0] for k in range(N))
+                else:
+                    n_ineq += N * self.F.shape[0]
             if self.F_term is not None:
                 nc_term = self.F_term.shape[0]
                 n_ineq += nc_term
@@ -590,11 +827,16 @@ class LinearOCP:
                 curr_row = 0
                 for k in range(N):
                     if self.F is not None and self.G is not None and self.h is not None:
+                        F_k = self.F[k] if self.F.ndim == 3 else self.F
+                        G_k = self.G[k] if self.G.ndim == 3 else self.G
+                        h_k = self.h[k] if self.h.ndim == 2 else self.h
+                        nc = F_k.shape[0]
+
                         idx_x = k * (nx + nu)
                         idx_u = idx_x + nx
-                        A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = self.F
-                        A_ineq[curr_row : curr_row + nc, idx_u : idx_u + nu] = self.G
-                        uba[n_eq + curr_row : n_eq + curr_row + nc] = self.h
+                        A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = F_k
+                        A_ineq[curr_row : curr_row + nc, idx_u : idx_u + nu] = G_k
+                        uba[n_eq + curr_row : n_eq + curr_row + nc] = h_k
                         curr_row += nc
 
                 if self.F_term is not None and self.h_term is not None:
@@ -634,14 +876,14 @@ class LinearOCP:
             S_x[:nx, :] = np.eye(nx)
 
             for k in range(1, N + 1):
-                S_x[k * nx : (k + 1) * nx, :] = A_d @ S_x[(k - 1) * nx : k * nx, :]
+                S_x[k * nx : (k + 1) * nx, :] = A_d_list[k - 1] @ S_x[(k - 1) * nx : k * nx, :]
 
                 for i in range(k):
                     if i == k - 1:
-                        S_u[k * nx : (k + 1) * nx, i * nu : (i + 1) * nu] = B_d
+                        S_u[k * nx : (k + 1) * nx, i * nu : (i + 1) * nu] = B_d_list[k - 1]
                     else:
                         S_u[k * nx : (k + 1) * nx, i * nu : (i + 1) * nu] = (
-                            A_d @ S_u[(k - 1) * nx : k * nx, i * nu : (i + 1) * nu]
+                            A_d_list[k - 1] @ S_u[(k - 1) * nx : k * nx, i * nu : (i + 1) * nu]
                         )
 
             Q_bar = np.zeros(((N + 1) * nx, (N + 1) * nx))
@@ -651,24 +893,27 @@ class LinearOCP:
             r_bar = np.zeros(N * nu)
 
             for k in range(N):
-                Q_bar[k * nx : (k + 1) * nx, k * nx : (k + 1) * nx] = self.Q
-                R_bar[k * nu : (k + 1) * nu, k * nu : (k + 1) * nu] = self.R
-                N_bar[k * nx : (k + 1) * nx, k * nu : (k + 1) * nu] = self.N_cross
-                q_bar[k * nx : (k + 1) * nx] = self.q_term
-                r_bar[k * nu : (k + 1) * nu] = self.r_term
+                Q_bar[k * nx : (k + 1) * nx, k * nx : (k + 1) * nx] = self.Q[k] if self.Q.ndim == 3 else self.Q
+                R_bar[k * nu : (k + 1) * nu, k * nu : (k + 1) * nu] = self.R[k] if self.R.ndim == 3 else self.R
+                N_bar[k * nx : (k + 1) * nx, k * nu : (k + 1) * nu] = (
+                    self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+                )
+                q_bar[k * nx : (k + 1) * nx] = self.q[k] if self.q.ndim == 2 else self.q
+                r_bar[k * nu : (k + 1) * nu] = self.r[k] if self.r.ndim == 2 else self.r
 
             Q_bar[N * nx : (N + 1) * nx, N * nx : (N + 1) * nx] = self.Qf
-            q_bar[N * nx : (N + 1) * nx] = self.qf_term
+            q_bar[N * nx : (N + 1) * nx] = self.qf
 
             H_u = S_u.T @ Q_bar @ S_u + R_bar + S_u.T @ N_bar + N_bar.T @ S_u
             H_sp_ca = ca.DM(H_u)
 
             n_ineq = 0
-            nc = 0
             nc_term = 0
             if self.F is not None:
-                nc = self.F.shape[0]
-                n_ineq += N * nc
+                if self.F.ndim == 3:
+                    n_ineq += sum(self.F[k].shape[0] for k in range(N))
+                else:
+                    n_ineq += N * self.F.shape[0]
             if self.F_term is not None:
                 nc_term = self.F_term.shape[0]
                 n_ineq += nc_term
@@ -681,9 +926,14 @@ class LinearOCP:
                 curr_row = 0
                 for k in range(N):
                     if self.F is not None and self.G is not None and self.h is not None:
-                        F_bar[curr_row : curr_row + nc, k * nx : (k + 1) * nx] = self.F
-                        G_bar[curr_row : curr_row + nc, k * nu : (k + 1) * nu] = self.G
-                        h_bar[curr_row : curr_row + nc] = self.h
+                        F_k = self.F[k] if self.F.ndim == 3 else self.F
+                        G_k = self.G[k] if self.G.ndim == 3 else self.G
+                        h_k = self.h[k] if self.h.ndim == 2 else self.h
+                        nc = F_k.shape[0]
+
+                        F_bar[curr_row : curr_row + nc, k * nx : (k + 1) * nx] = F_k
+                        G_bar[curr_row : curr_row + nc, k * nu : (k + 1) * nu] = G_k
+                        h_bar[curr_row : curr_row + nc] = h_k
                         curr_row += nc
 
                 if self.F_term is not None and self.h_term is not None:

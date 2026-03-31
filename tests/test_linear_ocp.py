@@ -109,3 +109,42 @@ def test_linear_ocp_constraints() -> None:
     assert status_ss == "success"
     np.testing.assert_allclose(X, X_ss, atol=1e-5)
     np.testing.assert_allclose(U, U_ss, atol=1e-5)
+
+
+def test_linear_ocp_time_varying() -> None:
+    A1 = np.array([[1.0, 0.1], [0.0, 1.0]])
+    B1 = np.array([[0.0], [0.1]])
+
+    A2 = np.array([[1.0, 0.2], [0.0, 1.0]])
+    B2 = np.array([[0.0], [0.2]])
+
+    A_tv = np.stack([A1, A1, A2, A2, A2])
+    B_tv = np.stack([B1, B1, B2, B2, B2])
+
+    Q = np.eye(2) * 10
+    R = np.eye(1)
+
+    ocp = LinearOCP(N=5, dt=0.1, A=A_tv, B=B_tv, Q=Q, R=R)
+    ocp.setup(
+        method="multiple_shooting",
+        dynamics_type="discrete",
+        solver="qrqp",
+        solver_opts={"print_iter": False, "print_header": False},
+    )
+
+    X_ms, U_ms, status_ms = ocp.solve(np.array([1.0, 0.0]))
+    assert status_ms == "success"
+
+    ocp_ss = LinearOCP(N=5, dt=0.1, A=A_tv, B=B_tv, Q=Q, R=R)
+    ocp_ss.setup(
+        method="single_shooting",
+        dynamics_type="discrete",
+        solver="qrqp",
+        solver_opts={"print_iter": False, "print_header": False},
+    )
+
+    X_ss, U_ss, status_ss = ocp_ss.solve(np.array([1.0, 0.0]))
+    assert status_ss == "success"
+
+    np.testing.assert_allclose(X_ms, X_ss, atol=1e-5)
+    np.testing.assert_allclose(U_ms, U_ss, atol=1e-5)

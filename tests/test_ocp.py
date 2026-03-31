@@ -145,3 +145,173 @@ def test_ocp_custom_solver_opts() -> None:
 
     # IPOPT should reach max iter and fail gracefully
     assert "Maximum_Iterations_Exceeded" in status or "Solve_Failed" in status
+
+
+def test_linearize_method() -> None:
+    # Let's create a simple nonlinear OCP
+    nx = 2
+    nu = 1
+    N = 5
+    dt = 0.1
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+
+    # Dynamics: x1_dot = x2, x2_dot = sin(x1) + u
+    dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[1], ca.sin(x[0]) + u)], ["x", "u"], ["f"])
+
+    # Objective: L(x,u) = x1^2 + x2^2 + u^2 + x1*u
+    obj = ca.Function("obj", [x, u], [x[0] ** 2 + x[1] ** 2 + u**2 + x[0] * u], ["x", "u"], ["f"])
+
+    # Constraints: u <= 1 -> u - 1 <= 0
+    in_eq = ca.Function("in_eq", [x, u], [u - 1], ["x", "u"], ["f"])
+
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn, in_eq_constraints=in_eq)
+
+    x_bar = np.array([0.0, 0.0])
+    u_bar = np.array([0.0])
+
+    lin_ocp = ocp.linearize(x_bar, u_bar, dynamics_type="discrete")
+
+    # The jacobian of [x2, sin(x1)+u] at [0,0] is A = [[0, 1], [1, 0]], B = [[0], [1]]
+    A_expected = np.array([[0.0, 1.0], [1.0, 0.0]])
+    B_expected = np.array([[0.0], [1.0]])
+
+    # Objective hessians: Q = [[2, 0], [0, 2]], R = [[2]], N_cross = [[1], [0]]
+    # Since cost is L = x1^2 + x2^2 + u^2 + x1*u
+    # dL/dx = [2x1 + u, 2x2], d2L/dx2 = [[2, 0], [0, 2]]
+    # dL/du = 2u + x1, d2L/du2 = [[2]]
+    # d2L/dxdu = [[1], [0]]
+    Q_expected = np.array([[2.0, 0.0], [0.0, 2.0]])
+    R_expected = np.array([[2.0]])
+    N_cross_expected = np.array([[1.0], [0.0]])
+
+    np.testing.assert_allclose(lin_ocp.A[0], A_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.B[0], B_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.Q[0], Q_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.R[0], R_expected, atol=1e-10)
+    np.testing.assert_allclose(lin_ocp.N_cross[0], N_cross_expected, atol=1e-10)
+
+
+def test_linearize_equivalence() -> None:
+    # Create a linear-quadratic OCP and solve it with non-linear solver
+    # Then linearize it around 0 and solve it with QP solver
+    # The result should be exactly the same
+
+    nx = 2
+    nu = 1
+    N = 10
+    dt = 0.1
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+
+    # Dynamics: x_next = A_d x + B_d u
+    A = np.array([[1.0, 0.1], [0.0, 1.0]])
+    B = np.array([[0.0], [0.1]])
+    dyn = ca.Function("dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
+
+    # Objective: 0.5*(x^T Q x + u^T R u)
+    Q = np.eye(2) * 10
+    R = np.eye(1)
+    obj = ca.Function("obj", [x, u], [0.5 * (x.T @ Q @ x + u.T @ R @ u)], ["x", "u"], ["f"])
+
+    term_obj = ca.Function("term_obj", [x], [0.5 * (x.T @ Q @ x)], ["x"], ["f"])
+
+    ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
+
+    ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="ipopt", solver_opts={"print_level": 0})
+    X_nl, U_nl, status_nl = ocp.solve(np.array([1.0, 0.0]))
+    assert status_nl == "Solve_Succeeded"
+
+    # Linearize around 0
+    x_bar = np.array([0.0, 0.0])
+    u_bar = np.array([0.0])
+    lin_ocp = ocp.linearize(x_bar, u_bar, dynamics_type="discrete")
+
+    lin_ocp.setup(
+        method="multiple_shooting",
+        dynamics_type="discrete",
+        solver="qrqp",
+        solver_opts={"print_iter": False, "print_header": False},
+    )
+    X_lin, U_lin, status_lin = lin_ocp.solve(np.array([1.0, 0.0]))
+    assert status_lin == "success"
+
+    np.testing.assert_allclose(X_nl, X_lin, atol=1e-10)
+    np.testing.assert_allclose(U_nl, U_lin, atol=1e-10)
+
+
+def solve_riccati(
+    A: np.ndarray, B: np.ndarray, Q: np.ndarray, R: np.ndarray, N: int, Qf: np.ndarray
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    # Solves finite-horizon LQR backwards
+    P: list[np.ndarray] = [Qf]
+    K: list[np.ndarray] = []
+
+    for _k in range(N):
+        Pk = P[0]
+
+        # K_k = (R + B^T P_{k+1} B)^-1 B^T P_{k+1} A
+        temp = np.linalg.inv(R + B.T @ Pk @ B)
+        K_k = temp @ B.T @ Pk @ A
+
+        # P_k = Q + A^T P_{k+1} (A - B K_k)
+        P_prev = Q + A.T @ Pk @ (A - B @ K_k)
+
+        K.insert(0, K_k)
+        P.insert(0, P_prev)
+
+    return K, P
+
+
+def test_riccati_equivalence() -> None:
+    nx = 2
+    nu = 1
+    N = 15
+    dt = 0.1
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+
+    A = np.array([[1.0, 0.1], [0.0, 1.0]])
+    B = np.array([[0.0], [0.1]])
+    dyn = ca.Function("dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
+
+    Q = np.eye(2) * 10
+    R = np.eye(1)
+    obj = ca.Function("obj", [x, u], [0.5 * (x.T @ Q @ x + u.T @ R @ u)], ["x", "u"], ["f"])
+
+    term_obj = ca.Function("term_obj", [x], [0.5 * (x.T @ Q @ x)], ["x"], ["f"])
+
+    ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
+
+    # Linearize around 0
+    x_bar = np.array([0.0, 0.0])
+    u_bar = np.array([0.0])
+    lin_ocp = ocp.linearize(x_bar, u_bar, dynamics_type="discrete")
+
+    lin_ocp.setup(
+        method="multiple_shooting",
+        dynamics_type="discrete",
+        solver="qrqp",
+        solver_opts={"print_iter": False, "print_header": False},
+    )
+
+    x0 = np.array([2.0, -1.0])
+    X_lin, U_lin, status_lin = lin_ocp.solve(x0)
+    assert status_lin == "success"
+
+    # Riccati solution
+    K_gains, _ = solve_riccati(A, B, Q, R, N, Q)
+
+    X_ric = np.zeros((nx, N + 1))
+    U_ric = np.zeros((nu, N))
+
+    X_ric[:, 0] = x0
+    for k in range(N):
+        U_ric[:, k] = -K_gains[k] @ X_ric[:, k]
+        X_ric[:, k + 1] = A @ X_ric[:, k] + B @ U_ric[:, k]
+
+    np.testing.assert_allclose(X_lin, X_ric, atol=1e-10)
+    np.testing.assert_allclose(U_lin, U_ric, atol=1e-10)
