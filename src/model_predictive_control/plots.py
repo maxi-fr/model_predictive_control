@@ -23,7 +23,7 @@ def plot_states(
 
     Args:
         time (array-like): Time array.
-        X (array-like): State array of shape (nx, N+1).
+        X (array-like): State array of shape (N+1, nx).
         indices (list, optional): List of indices of states to plot. Defaults to all.
         labels (list, optional): List of labels for the plotted states.
         fig (matplotlib.figure.Figure, optional): Figure to plot on.
@@ -36,7 +36,10 @@ def plot_states(
         tuple: (fig, ax)
     """
     X = np.asarray(X)
-    nx = X.shape[0]
+    if X.ndim == 2:
+        nx = X.shape[1]
+    else:
+        nx = 1
 
     if indices is None:
         indices = list(range(nx))
@@ -48,7 +51,7 @@ def plot_states(
         fig, ax = plt.subplots()
 
     for i, idx in enumerate(indices):
-        ax.plot(time, X[idx, :], label=labels[i])
+        ax.plot(time, X[:, idx] if X.ndim == 2 else X, label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
             min_val, max_val = bounds[i]  # type: ignore
@@ -85,8 +88,8 @@ def plot_mpc_trajectories(
 
     Args:
         time (array-like): Time array of length (N_sim + 1).
-        X_closed_loop (array-like): Closed-loop state array of shape (nx, N_sim + 1).
-        X_open_loop (array-like): 3D array of open-loop predictions of shape (N_sim, nx, N_horizon + 1).
+        X_closed_loop (array-like): Closed-loop state array of shape (N_sim + 1, nx).
+        X_open_loop (array-like): 3D array of open-loop predictions of shape (N_sim, N_horizon + 1, nx).
             X_open_loop[k, :, :] is the prediction made at time step k.
         indices (list, optional): List of indices of states to plot. Defaults to all.
         labels (list, optional): List of labels for the plotted states.
@@ -105,9 +108,13 @@ def plot_mpc_trajectories(
     X_open_loop = np.asarray(X_open_loop)
     time = np.asarray(time)
 
-    nx = X_closed_loop.shape[0]
+    if X_closed_loop.ndim == 2:
+        nx = X_closed_loop.shape[1]
+    else:
+        nx = 1
+
     N_sim = X_open_loop.shape[0]
-    N_horizon = X_open_loop.shape[2] - 1
+    N_horizon = X_open_loop.shape[1] - 1
 
     # Estimate dt assuming uniform time steps
     dt = time[1] - time[0] if len(time) > 1 else 1.0
@@ -133,9 +140,10 @@ def plot_mpc_trajectories(
             pred_time = time[k] + np.arange(N_horizon + 1) * dt
 
             # Plot the prediction trace. Add label only on the first iteration to avoid legend duplication
+            pred_trace = X_open_loop[k, :, idx] if X_open_loop.ndim == 3 else X_open_loop[k, :]
             ax.plot(
                 pred_time,
-                X_open_loop[k, idx, :],
+                pred_trace,
                 color=color,
                 alpha=0.3,
                 linestyle="--",
@@ -143,7 +151,8 @@ def plot_mpc_trajectories(
             )
 
         # Plot closed-loop trajectory
-        ax.plot(time, X_closed_loop[idx, :], color=color, linewidth=2, label=f"{labels[i]} (closed-loop)")
+        cl_trace = X_closed_loop[:, idx] if X_closed_loop.ndim == 2 else X_closed_loop
+        ax.plot(time, cl_trace, color=color, linewidth=2, label=f"{labels[i]} (closed-loop)")
 
         # Plot bounds
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
@@ -181,7 +190,7 @@ def plot_controls(
 
     Args:
         time (array-like): Time array.
-        U (array-like): Control array of shape (nu, N).
+        U (array-like): Control array of shape (N, nu).
         indices (list, optional): List of indices of controls to plot. Defaults to all.
         labels (list, optional): List of labels for the plotted controls.
         fig (matplotlib.figure.Figure, optional): Figure to plot on.
@@ -195,7 +204,11 @@ def plot_controls(
         tuple: (fig, ax)
     """
     U = np.asarray(U)
-    nu = U.shape[0]
+    if U.ndim == 2:
+        nu = U.shape[1]
+    else:
+        nu = 1
+
     time = np.asarray(time)
 
     if indices is None:
@@ -208,14 +221,16 @@ def plot_controls(
         fig, ax = plt.subplots()
 
     # Handle time array length mismatch
-    # U is typically (nu, N) and time is (N+1,)
-    plot_time = time[:-1] if len(time) == U.shape[1] + 1 else time
+    # U is typically (N, nu) and time is (N+1,)
+    U_len = U.shape[0] if U.ndim == 2 else len(U)
+    plot_time = time[:-1] if len(time) == U_len + 1 else time
 
     for i, idx in enumerate(indices):
+        trace = U[:, idx] if U.ndim == 2 else U
         if step:
-            ax.step(plot_time, U[idx, :], label=labels[i], where="post")
+            ax.step(plot_time, trace, label=labels[i], where="post")
         else:
-            ax.plot(plot_time, U[idx, :], label=labels[i])
+            ax.plot(plot_time, trace, label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
             min_val, max_val = bounds[i]  # type: ignore
