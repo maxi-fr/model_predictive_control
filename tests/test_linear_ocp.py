@@ -34,8 +34,20 @@ def test_linear_ocp_solve_multiple_shooting() -> None:
 
     X, U, status = ocp.solve(np.array([1.0, 0.0]))
     assert status == "success"
-    assert X.shape == (2, 6)
-    assert U.shape == (1, 5)
+    assert X.shape == (6, 2)
+    assert U.shape == (5, 1)
+
+    # Test warm start functionality
+    X_warm, U_warm, status_warm = ocp.solve(np.array([1.0, 0.0]), X_guess=X, U_guess=U)
+    assert status_warm == "success"
+    np.testing.assert_allclose(X, X_warm, atol=1e-5)
+    np.testing.assert_allclose(U, U_warm, atol=1e-5)
+
+    # Test bad warm start shapes
+    with pytest.raises(ValueError):
+        ocp.solve(np.array([1.0, 0.0]), X_guess=np.zeros((6, 3)))
+    with pytest.raises(ValueError):
+        ocp.solve(np.array([1.0, 0.0]), U_guess=np.zeros((4, 1)))
 
 
 def test_linear_ocp_solve_single_shooting() -> None:
@@ -54,8 +66,14 @@ def test_linear_ocp_solve_single_shooting() -> None:
 
     X, U, status = ocp.solve(np.array([1.0, 0.0]))
     assert status == "success"
-    assert X.shape == (2, 6)
-    assert U.shape == (1, 5)
+    assert X.shape == (6, 2)
+    assert U.shape == (5, 1)
+
+    # Test warm start functionality
+    X_warm, U_warm, status_warm = ocp.solve(np.array([1.0, 0.0]), X_guess=X, U_guess=U)
+    assert status_warm == "success"
+    np.testing.assert_allclose(X, X_warm, atol=1e-5)
+    np.testing.assert_allclose(U, U_warm, atol=1e-5)
 
 
 def test_linear_ocp_continuous() -> None:

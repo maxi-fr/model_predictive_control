@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.7
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: model-predictive-control (3.12.1)
 #     language: python
@@ -120,18 +120,25 @@ ocp.setup(
 
 # Simulation loop
 x0_val = np.array([1.5, 0.0])  # Start near the bound
-X_closed_loop = np.zeros((nx, N_sim + 1))
-U_closed_loop = np.zeros((nu, N_sim))
-X_open_loop = np.zeros((N_sim, nx, N_horizon + 1))
+X_closed_loop = np.zeros((N_sim + 1, nx))
+U_closed_loop = np.zeros((N_sim, nu))
+X_open_loop = np.zeros((N_sim, N_horizon + 1, nx))
 
-X_closed_loop[:, 0] = x0_val
+X_closed_loop[0, :] = x0_val
 current_x = x0_val
+
+# Initialize warm-start variables
+X_guess = None
+U_guess = None
 
 for k in range(N_sim):
     X_opt, U_opt, status = ocp.solve(current_x)
 
+    # In a real scenario, you could use warm starting like this:
+    # X_opt, U_opt, status = ocp.solve(current_x, X_guess=X_guess, U_guess=U_guess)
+
     # Extract first control action
-    u_k = U_opt[:, 0]
+    u_k = U_opt[0, :]
 
     # Store predictions for plotting
     X_open_loop[k, :, :] = X_opt
@@ -140,11 +147,15 @@ for k in range(N_sim):
     x_next = A @ current_x + B @ u_k
 
     # Store results
-    U_closed_loop[:, k] = u_k
-    X_closed_loop[:, k + 1] = x_next
+    U_closed_loop[k, :] = u_k
+    X_closed_loop[k + 1, :] = x_next
 
     # Update current state
     current_x = x_next
+
+    # Shift trajectories for next warm start
+    X_guess = np.vstack((X_opt[1:, :], X_opt[-1:, :]))
+    U_guess = np.vstack((U_opt[1:, :], U_opt[-1:, :]))
 
 print("Simulation finished.")
 

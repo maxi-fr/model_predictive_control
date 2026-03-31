@@ -114,12 +114,18 @@ def test_ocp_setup_and_solve(method: str, dynamics_type: str) -> None:
     X_opt, U_opt, status = ocp.solve(x0)
 
     assert status == "Solve_Succeeded"
-    assert X_opt.shape == (2, 11)  # nx=2, N=10 -> N+1 points
-    assert U_opt.shape == (1, 10)  # nu=1, N=10 points
+    assert X_opt.shape == (11, 2)  # N+1 points, nx=2
+    assert U_opt.shape == (10, 1)  # N points, nu=1
 
     # State should be driven towards 0
-    assert abs(X_opt[0, -1]) < 0.9  # Loose bounds since it's a very short horizon N=10
-    assert abs(X_opt[1, -1]) < 0.9
+    assert abs(X_opt[-1, 0]) < 0.9  # Loose bounds since it's a very short horizon N=10
+    assert abs(X_opt[-1, 1]) < 0.9
+
+    # Test warm start functionality
+    X_warm, U_warm, status_warm = ocp.solve(x0, X_guess=X_opt, U_guess=U_opt)
+    assert status_warm == "Solve_Succeeded"
+    np.testing.assert_allclose(X_opt, X_warm, atol=1e-5)
+    np.testing.assert_allclose(U_opt, U_warm, atol=1e-5)
 
     # Check constraints
     assert np.all(U_opt >= -1.0001)
@@ -305,13 +311,13 @@ def test_riccati_equivalence() -> None:
     # Riccati solution
     K_gains, _ = solve_riccati(A, B, Q, R, N, Q)
 
-    X_ric = np.zeros((nx, N + 1))
-    U_ric = np.zeros((nu, N))
+    X_ric = np.zeros((N + 1, nx))
+    U_ric = np.zeros((N, nu))
 
-    X_ric[:, 0] = x0
+    X_ric[0, :] = x0
     for k in range(N):
-        U_ric[:, k] = -K_gains[k] @ X_ric[:, k]
-        X_ric[:, k + 1] = A @ X_ric[:, k] + B @ U_ric[:, k]
+        U_ric[k, :] = -K_gains[k] @ X_ric[k, :]
+        X_ric[k + 1, :] = A @ X_ric[k, :] + B @ U_ric[k, :]
 
     np.testing.assert_allclose(X_lin, X_ric, atol=1e-10)
     np.testing.assert_allclose(U_lin, U_ric, atol=1e-10)

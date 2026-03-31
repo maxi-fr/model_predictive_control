@@ -423,23 +423,42 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(self, x0: ArrayLike) -> tuple[np.ndarray, np.ndarray, str]:
+    def solve(
+        self,
+        x0: ArrayLike,
+        X_guess: ArrayLike | None = None,
+        U_guess: ArrayLike | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, str]:
         """
         Solves the OCP for a given initial state.
 
         Args:
             x0: Initial state as a numpy array or list.
+            X_guess: Optional initial guess for state trajectory of shape (N + 1, nx).
+            U_guess: Optional initial guess for control trajectory of shape (N, nu).
 
         Returns:
             Tuple of (X_opt, U_opt, status)
-            - X_opt: numpy array of optimal state trajectory
-            - U_opt: numpy array of optimal control trajectory
+            - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
+            - U_opt: numpy array of optimal control trajectory of shape (N, nu)
             - status: string indicating solver status
         """
         if self._opti is None:
             raise RuntimeError("OCP has not been set up. Call setup() first.")
 
         self._opti.set_value(self._x0_param, x0)
+
+        if X_guess is not None:
+            X_guess = np.asarray(X_guess)
+            if X_guess.shape != (self.N + 1, self._nx):
+                raise ValueError(f"X_guess must have shape ({self.N + 1}, {self._nx})")
+            self._opti.set_initial(self._X, X_guess.T)
+
+        if U_guess is not None:
+            U_guess = np.asarray(U_guess)
+            if U_guess.shape != (self.N, self._nu):
+                raise ValueError(f"U_guess must have shape ({self.N}, {self._nu})")
+            self._opti.set_initial(self._U, U_guess.T)
 
         try:
             sol = self._opti.solve()
@@ -458,7 +477,7 @@ class OCP:
         if isinstance(U_opt, np.ndarray) and U_opt.ndim == 1:
             U_opt = U_opt.reshape(1, -1)
 
-        return X_opt, U_opt, status
+        return X_opt.T, U_opt.T, status
 
 
 def quadratic_objective(
@@ -968,9 +987,25 @@ class LinearOCP:
         else:
             raise ValueError(f"Unknown method: {method}")
 
-    def solve(self, x0: ArrayLike) -> tuple[np.ndarray, np.ndarray, str]:
+    def solve(
+        self,
+        x0: ArrayLike,
+        X_guess: ArrayLike | None = None,
+        U_guess: ArrayLike | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, str]:
         """
         Solves the Linear OCP for a given initial state.
+
+        Args:
+            x0: Initial state as a numpy array or list.
+            X_guess: Optional initial guess for state trajectory of shape (N + 1, nx).
+            U_guess: Optional initial guess for control trajectory of shape (N, nu).
+
+        Returns:
+            Tuple of (X_opt, U_opt, status)
+            - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
+            - U_opt: numpy array of optimal control trajectory of shape (N, nu)
+            - status: string indicating solver status
         """
         if self._solver_obj is None:
             raise RuntimeError("LinearOCP has not been set up. Call setup() first.")
@@ -978,6 +1013,15 @@ class LinearOCP:
         x0_arr = np.asarray(x0, dtype=float).flatten()
         if x0_arr.shape != (self.nx,):
             raise ValueError(f"Initial state must have length {self.nx}")
+
+        if X_guess is not None:
+            X_guess = np.asarray(X_guess)
+            if X_guess.shape != (self.N + 1, self.nx):
+                raise ValueError(f"X_guess must have shape ({self.N + 1}, {self.nx})")
+        if U_guess is not None:
+            U_guess = np.asarray(U_guess)
+            if U_guess.shape != (self.N, self.nu):
+                raise ValueError(f"U_guess must have shape ({self.N}, {self.nu})")
 
         if self._method == "multiple_shooting":
             lba = self._qp_setup["lba"].copy()
@@ -987,25 +1031,46 @@ class LinearOCP:
             lba[: self.nx] = x0_arr
             uba[: self.nx] = x0_arr
 
-            res = self._solver_obj(
-                h=self._qp_setup["h"], g=self._qp_setup["g"], a=self._qp_setup["a"], lba=lba, uba=uba
-            )
+            kwargs = {
+                "h": self._qp_setup["h"],
+                "g": self._qp_setup["g"],
+                "a": self._qp_setup["a"],
+                "lba": lba,
+                "uba": uba
+            }
+
+            if X_guess is not None or U_guess is not None:
+                x0_guess = np.zeros(self._qp_setup["n_vars"])
+                X_guess_used = X_guess if X_guess is not None else np.zeros((self.N + 1, self.nx))
+                U_guess_used = U_guess if U_guess is not None else np.zeros((self.N, self.nu))
+
+                for k in range(self.N):
+                    idx_x = k * (self.nx + self.nu)
+                    idx_u = idx_x + self.nx
+                    x0_guess[idx_x : idx_x + self.nx] = X_guess_used[k]
+                    x0_guess[idx_u : idx_u + self.nu] = U_guess_used[k]
+
+                idx_xN = self.N * (self.nx + self.nu)
+                x0_guess[idx_xN : idx_xN + self.nx] = X_guess_used[self.N]
+                kwargs["x0"] = x0_guess
+
+            res = self._solver_obj(**kwargs)
 
             z_opt = np.array(res["x"]).flatten()
             status = self._solver_obj.stats()["return_status"]
 
             # Unpack z = [x_0, u_0, x_1, u_1, ..., u_{N-1}, x_N]
-            X_opt = np.zeros((self.nx, self.N + 1))
-            U_opt = np.zeros((self.nu, self.N))
+            X_opt = np.zeros((self.N + 1, self.nx))
+            U_opt = np.zeros((self.N, self.nu))
 
             for k in range(self.N):
                 idx_x = k * (self.nx + self.nu)
                 idx_u = idx_x + self.nx
-                X_opt[:, k] = z_opt[idx_x : idx_x + self.nx]
-                U_opt[:, k] = z_opt[idx_u : idx_u + self.nu]
+                X_opt[k, :] = z_opt[idx_x : idx_x + self.nx]
+                U_opt[k, :] = z_opt[idx_u : idx_u + self.nu]
 
             idx_xN = self.N * (self.nx + self.nu)
-            X_opt[:, self.N] = z_opt[idx_xN : idx_xN + self.nx]
+            X_opt[self.N, :] = z_opt[idx_xN : idx_xN + self.nx]
 
         elif self._method == "single_shooting":
             # g_u(x0) = (x_0^T S_x^T Q_bar S_u + x_0^T S_x^T N_bar + q_bar^T S_u + r_bar^T)^T
@@ -1016,22 +1081,36 @@ class LinearOCP:
             )
             g_u = g_u_T.T
 
+            kwargs = {
+                "h": self._qp_setup["h"],
+                "g": g_u,
+                "a": self._qp_setup["a"]
+            }
+
             if self._qp_setup["n_ineq"] > 0:
                 # lba <= A U <= uba
                 # A_ineq_u U <= h_bar - F_bar S_x x_0
                 uba = self._qp_setup["h_bar"] - self._qp_setup["F_bar_S_x"] @ x0_arr
                 lba = np.full(self._qp_setup["n_ineq"], -1e9)
-                res = self._solver_obj(h=self._qp_setup["h"], g=g_u, a=self._qp_setup["a"], lba=lba, uba=uba)
-            else:
-                res = self._solver_obj(h=self._qp_setup["h"], g=g_u, a=self._qp_setup["a"])
+                kwargs["lba"] = lba
+                kwargs["uba"] = uba
+
+            if U_guess is not None:
+                kwargs["x0"] = U_guess.flatten()
+            elif X_guess is not None:
+                # Provide zeros for control guess if only X_guess is given,
+                # since single shooting only takes U as primal variables.
+                kwargs["x0"] = np.zeros(self.N * self.nu)
+
+            res = self._solver_obj(**kwargs)
 
             U_vec = np.array(res["x"]).flatten()
             status = self._solver_obj.stats()["return_status"]
 
             # Reconstruct X_opt and U_opt
-            U_opt = U_vec.reshape((self.N, self.nu)).T
+            U_opt = U_vec.reshape((self.N, self.nu))
             X_vec = self._qp_setup["S_x"] @ x0_arr + self._qp_setup["S_u"] @ U_vec
-            X_opt = X_vec.reshape((self.N + 1, self.nx)).T
+            X_opt = X_vec.reshape((self.N + 1, self.nx))
 
         else:
             raise ValueError(f"Unknown method: {self._method}")
