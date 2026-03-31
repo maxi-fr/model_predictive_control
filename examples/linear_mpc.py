@@ -21,7 +21,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model_predictive_control.mpc import LinearOCP
+from model_predictive_control.ocp import LinearOCP
 from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
 
 # %% [markdown]
@@ -66,47 +66,16 @@ x_max_val = 2.0
 # u <= 50.0   ->  [0, 0] x + 1 u <= 50.0
 # -u <= 50.0  ->  [0, 0] x - 1 u <= 50.0
 
-F = np.array([
-    [1.0, 0.0],
-    [-1.0, 0.0],
-    [0.0, 1.0],
-    [0.0, -1.0],
-    [0.0, 0.0],
-    [0.0, 0.0]
-])
+F = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0], [0.0, 0.0], [0.0, 0.0]])
 
-G = np.array([
-    [0.0],
-    [0.0],
-    [0.0],
-    [0.0],
-    [1.0],
-    [-1.0]
-])
+G = np.array([[0.0], [0.0], [0.0], [0.0], [1.0], [-1.0]])
 
-h = np.array([
-    x_max_val,
-    x_max_val,
-    x_max_val,
-    x_max_val,
-    u_max_val,
-    u_max_val
-])
+h = np.array([x_max_val, x_max_val, x_max_val, x_max_val, u_max_val, u_max_val])
 
 # Terminal constraints (only on state)
-F_term = np.array([
-    [1.0, 0.0],
-    [-1.0, 0.0],
-    [0.0, 1.0],
-    [0.0, -1.0]
-])
+F_term = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]])
 
-h_term = np.array([
-    x_max_val,
-    x_max_val,
-    x_max_val,
-    x_max_val
-])
+h_term = np.array([x_max_val, x_max_val, x_max_val, x_max_val])
 
 # Bounds for plotting
 x_min = np.array([-x_max_val, -x_max_val])
@@ -138,11 +107,16 @@ ocp = LinearOCP(
     G=G,
     h=h,
     F_term=F_term,
-    h_term=h_term
+    h_term=h_term,
 )
 
 # Setup using multiple shooting (sparse) and qrqp backend
-ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="qrqp", solver_opts={"print_iter": False, "print_header": False})
+ocp.setup(
+    method="multiple_shooting",
+    dynamics_type="discrete",
+    solver="qrqp",
+    solver_opts={"print_iter": False, "print_header": False},
+)
 
 # Simulation loop
 x0_val = np.array([1.5, 0.0])  # Start near the bound
