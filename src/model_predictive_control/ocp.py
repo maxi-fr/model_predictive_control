@@ -53,6 +53,11 @@ class OCP:
 
         if self.objective.size_in(0)[0] != nx or self.objective.size_in(1)[0] != nu:
             raise ValueError(f"Objective function inputs must match state ({nx}) and control ({nu}) sizes.")
+
+        if self.objective.n_in() == 4:
+            if self.objective.size_in(2)[0] != nx or self.objective.size_in(3)[0] != nu:
+                raise ValueError(f"Objective function reference inputs must match state ({nx}) and control ({nu}) sizes.")
+
         if self.objective.size_out(0)[0] != 1:
             raise ValueError("Objective function must return a scalar.")
 
@@ -73,6 +78,11 @@ class OCP:
         if hasattr(self, "terminal_objective") and self.terminal_objective is not None:
             if self.terminal_objective.size_in(0)[0] != nx:
                 raise ValueError(f"terminal_objective function input must match state ({nx}) size.")
+
+            if self.terminal_objective.n_in() == 2:
+                if self.terminal_objective.size_in(1)[0] != nx:
+                    raise ValueError(f"terminal_objective function reference input must match state ({nx}) size.")
+
             if self.terminal_objective.size_out(0)[0] != 1:
                 raise ValueError("terminal_objective function must return a scalar.")
 
@@ -93,7 +103,13 @@ class OCP:
         return nx, nu
 
     def linearize(
-        self, x_bar: ArrayLike, u_bar: ArrayLike, dynamics_type: str = "continuous", integrator: str = "rk4"
+        self,
+        x_bar: ArrayLike,
+        u_bar: ArrayLike,
+        dynamics_type: str = "continuous",
+        integrator: str = "rk4",
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
     ) -> "LinearOCP":
         """
         Linearizes the OCP around a nominal state and control trajectory (or fixed point)
@@ -105,6 +121,31 @@ class OCP:
         nx = self._nx
         nu = self._nu
         N = self.N
+
+        X_ref = None
+        U_ref = None
+
+        if self.objective.n_in() == 4:
+            if x_ref is None:
+                X_ref = np.zeros((N + 1, nx))
+            else:
+                X_ref = np.asarray(x_ref, dtype=float)
+                if X_ref.shape != (N + 1, nx):
+                    raise ValueError(f"x_ref trajectory must have shape ({N + 1}, {nx})")
+
+            if u_ref is None:
+                U_ref = np.zeros((N, nu))
+            else:
+                U_ref = np.asarray(u_ref, dtype=float)
+                if U_ref.shape != (N, nu):
+                    raise ValueError(f"u_ref trajectory must have shape ({N}, {nu})")
+        elif hasattr(self, "terminal_objective") and self.terminal_objective is not None and self.terminal_objective.n_in() == 2:
+            if x_ref is None:
+                X_ref = np.zeros((N + 1, nx))
+            else:
+                X_ref = np.asarray(x_ref, dtype=float)
+                if X_ref.shape != (N + 1, nx):
+                    raise ValueError(f"x_ref trajectory must have shape ({N + 1}, {nx})")
 
         if x_bar.ndim == 1:
             if x_bar.shape[0] != nx:
@@ -155,15 +196,24 @@ class OCP:
         B_func = ca.Function("B", [x_sym, u_sym], [ca.jacobian(f_val, u_sym)])
 
         # Objective symbolic derivatives
-        L_val = self.objective(x_sym, u_sym)
-        q_func = ca.Function("q", [x_sym, u_sym], [ca.jacobian(L_val, x_sym).T])
-        r_func = ca.Function("r", [x_sym, u_sym], [ca.jacobian(L_val, u_sym).T])
-        Q_func = ca.Function("Q", [x_sym, u_sym], [ca.hessian(L_val, x_sym)[0]])
-        R_func = ca.Function("R", [x_sym, u_sym], [ca.hessian(L_val, u_sym)[0]])
-
-        # N_cross is partial^2 L / (partial x partial u)
-        grad_x = ca.jacobian(L_val, x_sym)
-        N_cross_func = ca.Function("N_cross", [x_sym, u_sym], [ca.jacobian(grad_x, u_sym)])
+        if self.objective.n_in() == 4:
+            x_ref_sym = ca.MX.sym("x_ref", nx)
+            u_ref_sym = ca.MX.sym("u_ref", nu)
+            L_val = self.objective(x_sym, u_sym, x_ref_sym, u_ref_sym)
+            q_func = ca.Function("q", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(L_val, x_sym).T])
+            r_func = ca.Function("r", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(L_val, u_sym).T])
+            Q_func = ca.Function("Q", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.hessian(L_val, x_sym)[0]])
+            R_func = ca.Function("R", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.hessian(L_val, u_sym)[0]])
+            grad_x = ca.jacobian(L_val, x_sym)
+            N_cross_func = ca.Function("N_cross", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(grad_x, u_sym)])
+        else:
+            L_val = self.objective(x_sym, u_sym)
+            q_func = ca.Function("q", [x_sym, u_sym], [ca.jacobian(L_val, x_sym).T])
+            r_func = ca.Function("r", [x_sym, u_sym], [ca.jacobian(L_val, u_sym).T])
+            Q_func = ca.Function("Q", [x_sym, u_sym], [ca.hessian(L_val, x_sym)[0]])
+            R_func = ca.Function("R", [x_sym, u_sym], [ca.hessian(L_val, u_sym)[0]])
+            grad_x = ca.jacobian(L_val, x_sym)
+            N_cross_func = ca.Function("N_cross", [x_sym, u_sym], [ca.jacobian(grad_x, u_sym)])
 
         # Stage constraints
         C_funcs = []
@@ -207,11 +257,20 @@ class OCP:
 
             A[k] = np.array(A_func(xk, uk))
             B[k] = np.array(B_func(xk, uk))
-            Q[k] = np.array(Q_func(xk, uk))
-            R[k] = np.array(R_func(xk, uk))
-            N_cross[k] = np.array(N_cross_func(xk, uk))
-            q[k] = np.array(q_func(xk, uk)).flatten()
-            r[k] = np.array(r_func(xk, uk)).flatten()
+            if self.objective.n_in() == 4:
+                x_ref_k = X_ref[k]
+                u_ref_k = U_ref[k]
+                Q[k] = np.array(Q_func(xk, uk, x_ref_k, u_ref_k))
+                R[k] = np.array(R_func(xk, uk, x_ref_k, u_ref_k))
+                N_cross[k] = np.array(N_cross_func(xk, uk, x_ref_k, u_ref_k))
+                q[k] = np.array(q_func(xk, uk, x_ref_k, u_ref_k)).flatten()
+                r[k] = np.array(r_func(xk, uk, x_ref_k, u_ref_k)).flatten()
+            else:
+                Q[k] = np.array(Q_func(xk, uk))
+                R[k] = np.array(R_func(xk, uk))
+                N_cross[k] = np.array(N_cross_func(xk, uk))
+                q[k] = np.array(q_func(xk, uk)).flatten()
+                r[k] = np.array(r_func(xk, uk)).flatten()
 
             if has_stage_constraints:
                 F[k] = np.array(F_func(xk, uk))
@@ -221,13 +280,24 @@ class OCP:
         # Terminal cost
         x_N_sym = ca.MX.sym("x_N", nx)
         if self.terminal_objective is not None:
-            L_term_val = self.terminal_objective(x_N_sym)
-            qf_func = ca.Function("qf", [x_N_sym], [ca.jacobian(L_term_val, x_N_sym).T])
-            Qf_func = ca.Function("Qf", [x_N_sym], [ca.hessian(L_term_val, x_N_sym)[0]])
+            if self.terminal_objective.n_in() == 2:
+                x_ref_N_sym = ca.MX.sym("x_ref_N", nx)
+                L_term_val = self.terminal_objective(x_N_sym, x_ref_N_sym)
+                qf_func = ca.Function("qf", [x_N_sym, x_ref_N_sym], [ca.jacobian(L_term_val, x_N_sym).T])
+                Qf_func = ca.Function("Qf", [x_N_sym, x_ref_N_sym], [ca.hessian(L_term_val, x_N_sym)[0]])
 
-            xN = X_bar[N]
-            Qf = np.array(Qf_func(xN))
-            qf = np.array(qf_func(xN)).flatten()
+                xN = X_bar[N]
+                x_ref_N = X_ref[N]
+                Qf = np.array(Qf_func(xN, x_ref_N))
+                qf = np.array(qf_func(xN, x_ref_N)).flatten()
+            else:
+                L_term_val = self.terminal_objective(x_N_sym)
+                qf_func = ca.Function("qf", [x_N_sym], [ca.jacobian(L_term_val, x_N_sym).T])
+                Qf_func = ca.Function("Qf", [x_N_sym], [ca.hessian(L_term_val, x_N_sym)[0]])
+
+                xN = X_bar[N]
+                Qf = np.array(Qf_func(xN))
+                qf = np.array(qf_func(xN)).flatten()
         else:
             Qf = np.zeros((nx, nx))
             qf = np.zeros(nx)
@@ -286,6 +356,15 @@ class OCP:
         self._opti = ca.Opti()
         self._x0_param = self._opti.parameter(nx)
 
+        self._x_ref_param = None
+        self._u_ref_param = None
+
+        if self.objective.n_in() == 4:
+            self._x_ref_param = self._opti.parameter(nx, self.N + 1)
+            self._u_ref_param = self._opti.parameter(nu, self.N)
+        elif hasattr(self, "terminal_objective") and self.terminal_objective is not None and self.terminal_objective.n_in() == 2:
+            self._x_ref_param = self._opti.parameter(nx, self.N + 1)
+
         if dynamics_type == "continuous":
             if integrator == "rk4":
                 # Runge-Kutta 4 integration
@@ -320,7 +399,10 @@ class OCP:
                 u_k = self._U[:, k]
 
                 # Cost
-                cost += self.objective(x_k, u_k)
+                if self.objective.n_in() == 4:
+                    cost += self.objective(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+                else:
+                    cost += self.objective(x_k, u_k)
 
                 # Constraints
                 if self.eq_constraints is not None:
@@ -344,7 +426,10 @@ class OCP:
                 u_k = self._U[:, k]
 
                 # Cost
-                cost += self.objective(x_k, u_k)
+                if self.objective.n_in() == 4:
+                    cost += self.objective(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+                else:
+                    cost += self.objective(x_k, u_k)
 
                 # Constraints
                 if self.eq_constraints is not None:
@@ -373,7 +458,10 @@ class OCP:
                 u_k = self._U[:, k]
 
                 # Cost
-                cost += self.objective(x_k, u_k)
+                if self.objective.n_in() == 4:
+                    cost += self.objective(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+                else:
+                    cost += self.objective(x_k, u_k)
 
                 # Constraints
                 if self.eq_constraints is not None:
@@ -399,7 +487,10 @@ class OCP:
         # Terminal conditions
         x_N = self._X[:, self.N]
         if self.terminal_objective is not None:
-            cost += self.terminal_objective(x_N)
+            if self.terminal_objective.n_in() == 2:
+                cost += self.terminal_objective(x_N, self._x_ref_param[:, self.N])
+            else:
+                cost += self.terminal_objective(x_N)
         if self.terminal_eq_constraints is not None:
             self._opti.subject_to(self.terminal_eq_constraints(x_N) == 0)
         if self.terminal_in_eq_constraints is not None:
@@ -428,6 +519,8 @@ class OCP:
         x0: ArrayLike,
         X_guess: ArrayLike | None = None,
         U_guess: ArrayLike | None = None,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
     ) -> tuple[np.ndarray, np.ndarray, str]:
         """
         Solves the OCP for a given initial state.
@@ -436,6 +529,8 @@ class OCP:
             x0: Initial state as a numpy array or list.
             X_guess: Optional initial guess for state trajectory of shape (N + 1, nx).
             U_guess: Optional initial guess for control trajectory of shape (N, nu).
+            x_ref: Optional time-varying state reference of shape (N + 1, nx).
+            u_ref: Optional time-varying control reference of shape (N, nu).
 
         Returns:
             Tuple of (X_opt, U_opt, status)
@@ -447,6 +542,22 @@ class OCP:
             raise RuntimeError("OCP has not been set up. Call setup() first.")
 
         self._opti.set_value(self._x0_param, x0)
+
+        if self._x_ref_param is not None:
+            if x_ref is None:
+                x_ref = np.zeros((self.N + 1, self._nx))
+            x_ref_arr = np.asarray(x_ref, dtype=float)
+            if x_ref_arr.shape != (self.N + 1, self._nx):
+                raise ValueError(f"x_ref must have shape ({self.N + 1}, {self._nx})")
+            self._opti.set_value(self._x_ref_param, x_ref_arr.T)
+
+        if self._u_ref_param is not None:
+            if u_ref is None:
+                u_ref = np.zeros((self.N, self._nu))
+            u_ref_arr = np.asarray(u_ref, dtype=float)
+            if u_ref_arr.shape != (self.N, self._nu):
+                raise ValueError(f"u_ref must have shape ({self.N}, {self._nu})")
+            self._opti.set_value(self._u_ref_param, u_ref_arr.T)
 
         if X_guess is not None:
             X_guess = np.asarray(X_guess)
@@ -511,6 +622,46 @@ def quadratic_objective(
     )
 
 
+def tracking_objective(
+    Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
+) -> Function:
+    nx = Q.shape[0]
+    nu = R.shape[0]
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+    x_ref = ca.MX.sym("x_ref", nx)
+    u_ref = ca.MX.sym("u_ref", nu)
+
+    if q is None:
+        q = np.zeros((nx, 1))
+    if r is None:
+        r = np.zeros((nu, 1))
+    if N is None:
+        N = np.zeros((nx, nu))
+
+    if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
+        raise ValueError("Matrix Q must be square and match state dimension.")
+    if R.shape[0] != R.shape[1] or R.shape[0] != nu:
+        raise ValueError("Matrix R must be square and match control dimension.")
+    if q.shape[0] != nx:
+        raise ValueError("Vector q must match state dimension.")
+    if r.shape[0] != nu:
+        raise ValueError("Vector r must match control dimension.")
+    if N.shape[0] != nx or N.shape[1] != nu:
+        raise ValueError("Matrix N must match state and control dimensions.")
+
+    dx = x - x_ref
+    du = u - u_ref
+
+    return ca.Function(
+        "tracking_obj",
+        [x, u, x_ref, u_ref],
+        [dx.T @ Q @ dx + dx.T @ q + du.T @ R @ du + du.T @ r + dx.T @ N @ du],
+        ["x", "u", "x_ref", "u_ref"],
+        ["f"]
+    )
+
+
 def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:
     nx = F.shape[1]
     nu = G.shape[1]
@@ -572,6 +723,22 @@ def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:
     x = ca.MX.sym("x", nx)
 
     return ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
+
+
+def terminal_tracking_objective(Q: np.ndarray, q: np.ndarray) -> Function:
+    nx = Q.shape[0]
+
+    if Q.shape[1] != nx:
+        raise ValueError("Matrix Q must be square.")
+    if q.shape[0] != nx:
+        raise ValueError("Vector q must have the same length as Q.")
+
+    x = ca.MX.sym("x", nx)
+    x_ref = ca.MX.sym("x_ref", nx)
+
+    dx = x - x_ref
+
+    return ca.Function("term_tracking_obj", [x, x_ref], [dx.T @ Q @ dx + dx.T @ q], ["x", "x_ref"], ["f"])
 
 
 def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:
@@ -992,6 +1159,8 @@ class LinearOCP:
         x0: ArrayLike,
         X_guess: ArrayLike | None = None,
         U_guess: ArrayLike | None = None,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
     ) -> tuple[np.ndarray, np.ndarray, str]:
         """
         Solves the Linear OCP for a given initial state.
@@ -1000,6 +1169,8 @@ class LinearOCP:
             x0: Initial state as a numpy array or list.
             X_guess: Optional initial guess for state trajectory of shape (N + 1, nx).
             U_guess: Optional initial guess for control trajectory of shape (N, nu).
+            x_ref: Optional time-varying state reference of shape (N + 1, nx).
+            u_ref: Optional time-varying control reference of shape (N, nu).
 
         Returns:
             Tuple of (X_opt, U_opt, status)
@@ -1023,9 +1194,46 @@ class LinearOCP:
             if U_guess.shape != (self.N, self.nu):
                 raise ValueError(f"U_guess must have shape ({self.N}, {self.nu})")
 
+        X_ref_arr = None
+        if x_ref is not None:
+            X_ref_arr = np.asarray(x_ref, dtype=float)
+            if X_ref_arr.shape != (self.N + 1, self.nx):
+                raise ValueError(f"x_ref must have shape ({self.N + 1}, {self.nx})")
+
+        U_ref_arr = None
+        if u_ref is not None:
+            U_ref_arr = np.asarray(u_ref, dtype=float)
+            if U_ref_arr.shape != (self.N, self.nu):
+                raise ValueError(f"u_ref must have shape ({self.N}, {self.nu})")
+
         if self._method == "multiple_shooting":
             lba = self._qp_setup["lba"].copy()
             uba = self._qp_setup["uba"].copy()
+            g_vec = self._qp_setup["g"].copy()
+
+            # Apply tracking reference shifts to the linear cost term g_vec
+            if X_ref_arr is not None or U_ref_arr is not None:
+                for k in range(self.N):
+                    Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
+                    Rk = self.R[k] if self.R.ndim == 3 else self.R
+                    N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+
+                    idx_x = k * (self.nx + self.nu)
+                    idx_u = idx_x + self.nx
+
+                    if X_ref_arr is not None:
+                        g_vec[idx_x : idx_x + self.nx] -= Qk @ X_ref_arr[k]
+                        if np.any(N_cross_k):
+                            g_vec[idx_u : idx_u + self.nu] -= N_cross_k.T @ X_ref_arr[k]
+
+                    if U_ref_arr is not None:
+                        g_vec[idx_u : idx_u + self.nu] -= Rk @ U_ref_arr[k]
+                        if np.any(N_cross_k):
+                            g_vec[idx_x : idx_x + self.nx] -= N_cross_k @ U_ref_arr[k]
+
+                if X_ref_arr is not None:
+                    idx_xN = self.N * (self.nx + self.nu)
+                    g_vec[idx_xN : idx_xN + self.nx] -= self.Qf @ X_ref_arr[self.N]
 
             # Update initial condition constraint: I * x_0 = x0
             lba[: self.nx] = x0_arr
@@ -1033,7 +1241,7 @@ class LinearOCP:
 
             kwargs = {
                 "h": self._qp_setup["h"],
-                "g": self._qp_setup["g"],
+                "g": g_vec,
                 "a": self._qp_setup["a"],
                 "lba": lba,
                 "uba": uba
@@ -1073,11 +1281,42 @@ class LinearOCP:
             X_opt[self.N, :] = z_opt[idx_xN : idx_xN + self.nx]
 
         elif self._method == "single_shooting":
+            # Calculate updated q_bar and r_bar based on x_ref and u_ref
+            q_bar = np.zeros((self.N + 1) * self.nx)
+            r_bar = np.zeros(self.N * self.nu)
+
+            for k in range(self.N):
+                Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
+                Rk = self.R[k] if self.R.ndim == 3 else self.R
+                N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+                qk = self.q[k] if self.q.ndim == 2 else self.q
+                rk = self.r[k] if self.r.ndim == 2 else self.r
+
+                if X_ref_arr is not None:
+                    qk = qk - Qk @ X_ref_arr[k]
+                    if np.any(N_cross_k):
+                        rk = rk - N_cross_k.T @ X_ref_arr[k]
+
+                if U_ref_arr is not None:
+                    rk = rk - Rk @ U_ref_arr[k]
+                    if np.any(N_cross_k):
+                        qk = qk - N_cross_k @ U_ref_arr[k]
+
+                q_bar[k * self.nx : (k + 1) * self.nx] = qk
+                r_bar[k * self.nu : (k + 1) * self.nu] = rk
+
+            qf = self.qf.copy()
+            if X_ref_arr is not None:
+                qf = qf - self.Qf @ X_ref_arr[self.N]
+            q_bar[self.N * self.nx : (self.N + 1) * self.nx] = qf
+
             # g_u(x0) = (x_0^T S_x^T Q_bar S_u + x_0^T S_x^T N_bar + q_bar^T S_u + r_bar^T)^T
+            q_barT_Su_plus_r_barT = q_bar.T @ self._qp_setup["S_u"] + r_bar.T
+
             g_u_T = (
                 x0_arr.T @ self._qp_setup["S_xT_Q_bar_Su"]
                 + x0_arr.T @ self._qp_setup["S_xT_N_bar"]
-                + self._qp_setup["q_barT_Su_plus_r_barT"]
+                + q_barT_Su_plus_r_barT
             )
             g_u = g_u_T.T
 
