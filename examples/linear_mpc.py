@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.16.7
 #   kernelspec:
 #     display_name: model-predictive-control (3.12.1)
 #     language: python

@@ -36,10 +36,7 @@ def plot_states(
         tuple: (fig, ax)
     """
     X = np.asarray(X)
-    if X.ndim == 2:
-        nx = X.shape[1]
-    else:
-        nx = 1
+    nx = X.shape[1] if X.ndim == 2 else 1
 
     if indices is None:
         indices = list(range(nx))
@@ -108,10 +105,7 @@ def plot_mpc_trajectories(
     X_open_loop = np.asarray(X_open_loop)
     time = np.asarray(time)
 
-    if X_closed_loop.ndim == 2:
-        nx = X_closed_loop.shape[1]
-    else:
-        nx = 1
+    nx = X_closed_loop.shape[1] if X_closed_loop.ndim == 2 else 1
 
     N_sim = X_open_loop.shape[0]
     N_horizon = X_open_loop.shape[1] - 1
@@ -204,10 +198,7 @@ def plot_controls(
         tuple: (fig, ax)
     """
     U = np.asarray(U)
-    if U.ndim == 2:
-        nu = U.shape[1]
-    else:
-        nu = 1
+    nu = U.shape[1] if U.ndim == 2 else 1
 
     time = np.asarray(time)
 
