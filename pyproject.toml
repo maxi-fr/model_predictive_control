@@ -24,6 +24,8 @@ dev = [
     "ruff>=0.3.0",
     "pre-commit>=3.0.0",
     "mypy>=1.0.0",
+    "jupytext>=1.19.1",
+    "nbconvert>=7.17.0",
 ]
 
 [build-system]
