@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.16.7
 #   kernelspec:
 #     display_name: python3
 #     language: python
@@ -50,9 +50,9 @@ from model_predictive_control.plots import plot_controls, plot_states
 
 # %%
 # Physical parameters
-m = 1.0       # Mass (kg)
-g = 9.81      # Gravity (m/s^2)
-l = 0.25      # Arm length (m)
+m = 1.0  # Mass (kg)
+g = 9.81  # Gravity (m/s^2)
+l = 0.25  # Arm length (m)  # noqa: E741
 c_tau = 0.01  # Thrust-to-torque coefficient
 
 # Moments of inertia
@@ -70,10 +70,10 @@ x = ca.MX.sym("x", nx)
 u = ca.MX.sym("u", nu)
 
 # Unpack states
-p_pos = x[0:3]      # [x, y, z]
-v_vel = x[3:6]      # [v_x, v_y, v_z]
-eta = x[6:9]        # [phi, theta, psi]
-omega = x[9:12]     # [p, q, r]
+p_pos = x[0:3]  # [x, y, z]
+v_vel = x[3:6]  # [v_x, v_y, v_z]
+eta = x[6:9]  # [phi, theta, psi]
+omega = x[9:12]  # [p, q, r]
 
 # Unpack controls
 T1, T2, T3, T4 = u[0], u[1], u[2], u[3]
@@ -92,23 +92,13 @@ tau = ca.vertcat(tau_x, tau_y, tau_z)
 phi, theta, psi = eta[0], eta[1], eta[2]
 
 # Rotation matrix from Body to Inertial frame (Z-Y-X convention)
-R_z = ca.vcat([
-    ca.hcat([ca.cos(psi), -ca.sin(psi), 0]),
-    ca.hcat([ca.sin(psi),  ca.cos(psi), 0]),
-    ca.hcat([0,            0,           1])
-])
+R_z = ca.vcat([ca.hcat([ca.cos(psi), -ca.sin(psi), 0]), ca.hcat([ca.sin(psi), ca.cos(psi), 0]), ca.hcat([0, 0, 1])])
 
-R_y = ca.vcat([
-    ca.hcat([ ca.cos(theta), 0, ca.sin(theta)]),
-    ca.hcat([ 0,             1, 0           ]),
-    ca.hcat([-ca.sin(theta), 0, ca.cos(theta)])
-])
+R_y = ca.vcat(
+    [ca.hcat([ca.cos(theta), 0, ca.sin(theta)]), ca.hcat([0, 1, 0]), ca.hcat([-ca.sin(theta), 0, ca.cos(theta)])]
+)
 
-R_x = ca.vcat([
-    ca.hcat([1, 0,           0          ]),
-    ca.hcat([0, ca.cos(phi), -ca.sin(phi)]),
-    ca.hcat([0, ca.sin(phi),  ca.cos(phi)])
-])
+R_x = ca.vcat([ca.hcat([1, 0, 0]), ca.hcat([0, ca.cos(phi), -ca.sin(phi)]), ca.hcat([0, ca.sin(phi), ca.cos(phi)])])
 
 R_IB = R_z @ R_y @ R_x
 
@@ -119,11 +109,13 @@ T_B = ca.vertcat(0, 0, F_thrust)
 v_dot = g_vec + (R_IB @ T_B) / m
 
 # Rotational kinematics matrix (relating body rates to Euler rates)
-W = ca.vcat([
-    ca.hcat([1, ca.sin(phi)*ca.tan(theta), ca.cos(phi)*ca.tan(theta)]),
-    ca.hcat([0, ca.cos(phi),              -ca.sin(phi)             ]),
-    ca.hcat([0, ca.sin(phi)/ca.cos(theta), ca.cos(phi)/ca.cos(theta)])
-])
+W = ca.vcat(
+    [
+        ca.hcat([1, ca.sin(phi) * ca.tan(theta), ca.cos(phi) * ca.tan(theta)]),
+        ca.hcat([0, ca.cos(phi), -ca.sin(phi)]),
+        ca.hcat([0, ca.sin(phi) / ca.cos(theta), ca.cos(phi) / ca.cos(theta)]),
+    ]
+)
 eta_dot = W @ omega
 
 # Rotational dynamics (Euler's equations)
@@ -139,8 +131,8 @@ dynamics = ca.Function("dynamics", [x, u], [x_dot])
 # We define an S-shaped trajectory for the quadrotor to track in the horizontal plane while maintaining a constant altitude. The quadrotor should maintain a zero yaw angle throughout the trajectory.
 
 # %%
-N = 50       # Horizon length
-dt = 0.1     # Time step (s)
+N = 50  # Horizon length
+dt = 0.1  # Time step (s)
 T_final = N * dt
 time = np.arange(0, N + 1) * dt
 
@@ -165,7 +157,7 @@ for k in range(N + 1):
 
     # Velocities (derivatives of positions)
     X_ref[k, 3] = 1.0  # v_x
-    X_ref[k, 4] = 2.0 * (2 * np.pi / T_final) * np.cos(2 * np.pi * t / T_final) # v_y
+    X_ref[k, 4] = 2.0 * (2 * np.pi / T_final) * np.cos(2 * np.pi * t / T_final)  # v_y
     X_ref[k, 5] = 0.0  # v_z
 
     # All other states (angles and rates) are referenced to 0
@@ -181,10 +173,18 @@ for k in range(N):
 # %%
 # State weights
 Q_diag = [
-    100.0, 100.0, 200.0,  # Position: [x, y, z]
-    10.0,  10.0,  10.0,   # Velocity: [v_x, v_y, v_z]
-    10.0,  10.0,  50.0,   # Angles:   [phi, theta, psi]
-    1.0,   1.0,   1.0     # Rates:    [p, q, r]
+    100.0,
+    100.0,
+    200.0,  # Position: [x, y, z]
+    10.0,
+    10.0,
+    10.0,  # Velocity: [v_x, v_y, v_z]
+    10.0,
+    10.0,
+    50.0,  # Angles:   [phi, theta, psi]
+    1.0,
+    1.0,
+    1.0,  # Rates:    [p, q, r]
 ]
 Q = np.diag(Q_diag)
 
@@ -199,34 +199,50 @@ terminal_objective = terminal_tracking_objective(Qf, np.zeros(nx))
 
 # Constraints
 # Control inputs limits
-u_min_val = 0.0          # Minimum thrust (N)
-u_max_val = 5.0          # Maximum thrust per motor (N)
-u_min = np.array([u_min_val]*nu)
-u_max = np.array([u_max_val]*nu)
+u_min_val = 0.0  # Minimum thrust (N)
+u_max_val = 5.0  # Maximum thrust per motor (N)
+u_min = np.array([u_min_val] * nu)
+u_max = np.array([u_max_val] * nu)
 
 # State limits
 inf = 1e9
-x_min = np.array([
-    -inf, -inf, 0.0,            # Positions (z >= 0)
-    -inf, -inf, -inf,           # Velocities
-    -np.pi/3, -np.pi/3, -inf,   # Angles (limit roll and pitch to 60 deg)
-    -inf, -inf, -inf            # Rates
-])
-x_max = np.array([
-    inf, inf, inf,              # Positions
-    inf, inf, inf,              # Velocities
-    np.pi/3, np.pi/3, inf,      # Angles (limit roll and pitch to 60 deg)
-    inf, inf, inf               # Rates
-])
+x_min = np.array(
+    [
+        -inf,
+        -inf,
+        0.0,  # Positions (z >= 0)
+        -inf,
+        -inf,
+        -inf,  # Velocities
+        -np.pi / 3,
+        -np.pi / 3,
+        -inf,  # Angles (limit roll and pitch to 60 deg)
+        -inf,
+        -inf,
+        -inf,  # Rates
+    ]
+)
+x_max = np.array(
+    [
+        inf,
+        inf,
+        inf,  # Positions
+        inf,
+        inf,
+        inf,  # Velocities
+        np.pi / 3,
+        np.pi / 3,
+        inf,  # Angles (limit roll and pitch to 60 deg)
+        inf,
+        inf,
+        inf,  # Rates
+    ]
+)
 
 state_bounds = state_bounds_constraints(x_min, x_max, nu)
 control_bounds = control_bounds_constraints(u_min, u_max, nx)
 
-in_eq_constraints = ca.Function(
-    "in_eq",
-    [x, u],
-    [ca.vertcat(state_bounds(x, u), control_bounds(x, u))]
-)
+in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
 
 # %% [markdown]
 # ## 4. Setup and Solve OCP
@@ -238,27 +254,18 @@ ocp = OCP(
     objective=objective,
     dynamics=dynamics,
     in_eq_constraints=in_eq_constraints,
-    terminal_objective=terminal_objective
+    terminal_objective=terminal_objective,
 )
 
 ocp.setup(
-    method="collocation",
-    dynamics_type="continuous",
-    solver="ipopt",
-    solver_opts={"print_level": 5, "max_iter": 2000}
+    method="collocation", dynamics_type="continuous", solver="ipopt", solver_opts={"print_level": 5, "max_iter": 2000}
 )
 
 # Initial state is the start of the reference trajectory
 x0_val = X_ref[0, :].copy()
 
 print("Solving quadrotor tracking OCP...")
-X_opt, U_opt, status = ocp.solve(
-    x0_val,
-    X_guess=X_ref,
-    U_guess=U_ref,
-    x_ref=X_ref,
-    u_ref=U_ref
-)
+X_opt, U_opt, status = ocp.solve(x0_val, X_guess=X_ref, U_guess=U_ref, x_ref=X_ref, u_ref=U_ref)
 
 print(f"\nSolver Status: {status}")
 
@@ -269,12 +276,12 @@ print(f"\nSolver Status: {status}")
 fig, axs = plt.subplots(3, 1, figsize=(10, 12))
 
 # Position X, Y, Z vs Reference
-for i, (idx, label) in enumerate(zip([0, 1, 2], ['X [m]', 'Y [m]', 'Z [m]'])):
-    axs[0].plot(time, X_opt[:, idx], label=f'Optimal {label}', linewidth=2)
-    axs[0].plot(time, X_ref[:, idx], label=f'Reference {label}', linestyle='--', alpha=0.7)
+for _i, (idx, label) in enumerate(zip([0, 1, 2], ["X [m]", "Y [m]", "Z [m]"], strict=False)):
+    axs[0].plot(time, X_opt[:, idx], label=f"Optimal {label}", linewidth=2)
+    axs[0].plot(time, X_ref[:, idx], label=f"Reference {label}", linestyle="--", alpha=0.7)
 axs[0].set_title("Position Tracking")
 axs[0].set_ylabel("Position")
-axs[0].legend(loc='upper left', bbox_to_anchor=(1, 1))
+axs[0].legend(loc="upper left", bbox_to_anchor=(1, 1))
 axs[0].grid(True)
 
 # Euler Angles
@@ -287,7 +294,7 @@ plot_states(
     ax=axs[1],
     title="Euler Angles [rad]",
     ylabel="Angle [rad]",
-    bounds=[(-np.pi/3, np.pi/3), (-np.pi/3, np.pi/3), None]
+    bounds=[(-np.pi / 3, np.pi / 3), (-np.pi / 3, np.pi / 3), None],
 )
 
 # Controls
@@ -299,7 +306,7 @@ plot_controls(
     ax=axs[2],
     title="Motor Thrusts [N]",
     bounds=[(u_min_val, u_max_val)] * 4,
-    step=True
+    step=True,
 )
 
 plt.tight_layout()
@@ -307,12 +314,12 @@ plt.show()
 
 # 3D Path Plot
 fig_3d = plt.figure(figsize=(10, 8))
-ax_3d = fig_3d.add_subplot(111, projection='3d')
-ax_3d.plot(X_ref[:, 0], X_ref[:, 1], X_ref[:, 2], '--', color='gray', label='Reference Path')
-ax_3d.plot(X_opt[:, 0], X_opt[:, 1], X_opt[:, 2], '-b', linewidth=2, label='Optimal Path')
-ax_3d.set_xlabel('X [m]')
-ax_3d.set_ylabel('Y [m]')
-ax_3d.set_zlabel('Z [m]')
-ax_3d.set_title('3D Quadrotor Trajectory')
+ax_3d = fig_3d.add_subplot(111, projection="3d")
+ax_3d.plot(X_ref[:, 0], X_ref[:, 1], X_ref[:, 2], "--", color="gray", label="Reference Path")
+ax_3d.plot(X_opt[:, 0], X_opt[:, 1], X_opt[:, 2], "-b", linewidth=2, label="Optimal Path")
+ax_3d.set_xlabel("X [m]")
+ax_3d.set_ylabel("Y [m]")
+ax_3d.set_zlabel("Z [m]")
+ax_3d.set_title("3D Quadrotor Trajectory")
 ax_3d.legend()
 plt.show()
