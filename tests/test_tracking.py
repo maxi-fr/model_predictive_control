@@ -1,15 +1,10 @@
-import numpy as np
 import casadi as ca
-from model_predictive_control.ocp import (
-    OCP,
-    LinearOCP,
-    quadratic_objective,
-    tracking_objective,
-    terminal_quadratic_objective,
-    terminal_tracking_objective,
-)
+import numpy as np
 
-def test_ocp_with_tracking_reference():
+from model_predictive_control.ocp import OCP, LinearOCP, terminal_tracking_objective, tracking_objective
+
+
+def test_ocp_with_tracking_reference() -> None:
     nx = 2
     nu = 1
     N = 5
@@ -17,10 +12,10 @@ def test_ocp_with_tracking_reference():
 
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
-    x_ref = ca.MX.sym("x_ref", nx)
-    u_ref = ca.MX.sym("u_ref", nu)
+    ca.MX.sym("x_ref", nx)
+    ca.MX.sym("u_ref", nu)
 
-    dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[0] + dt*x[1], x[1] + dt*u[0])], ["x", "u"], ["f"])
+    dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[0] + dt * x[1], x[1] + dt * u[0])], ["x", "u"], ["f"])
 
     Q = np.eye(nx) * 10
     R = np.eye(nu) * 0.1
@@ -44,7 +39,8 @@ def test_ocp_with_tracking_reference():
     assert X_opt[-1, 0] > 0.5
     assert X_opt[-1, 1] > 0.5
 
-def test_linear_ocp_with_tracking_reference():
+
+def test_linear_ocp_with_tracking_reference() -> None:
     nx = 2
     nu = 1
     N = 15
@@ -56,17 +52,14 @@ def test_linear_ocp_with_tracking_reference():
     R = np.eye(nu)
     Qf = np.eye(nx) * 50
 
-    lin_ocp = LinearOCP(
-        N=N,
-        dt=dt,
-        A=A,
-        B=B,
-        Q=Q,
-        R=R,
-        Qf=Qf
-    )
+    lin_ocp = LinearOCP(N=N, dt=dt, A=A, B=B, Q=Q, R=R, Qf=Qf)
 
-    lin_ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="qrqp", solver_opts={"print_iter": False, "print_header": False})
+    lin_ocp.setup(
+        method="multiple_shooting",
+        dynamics_type="discrete",
+        solver="qrqp",
+        solver_opts={"print_iter": False, "print_header": False},
+    )
 
     x0 = np.array([0.0, 0.0])
     X_ref = np.ones((N + 1, nx)) * 1.0
@@ -78,7 +71,8 @@ def test_linear_ocp_with_tracking_reference():
     # It should track X_ref
     assert np.allclose(X_opt[-1], [1.0, 1.0], atol=0.2)
 
-def test_linearize_with_reference():
+
+def test_linearize_with_reference() -> None:
     nx = 2
     nu = 1
     N = 5
@@ -86,10 +80,10 @@ def test_linearize_with_reference():
 
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
-    x_ref = ca.MX.sym("x_ref", nx)
-    u_ref = ca.MX.sym("u_ref", nu)
+    ca.MX.sym("x_ref", nx)
+    ca.MX.sym("u_ref", nu)
 
-    dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[0] + dt*x[1], x[1] + dt*u[0])], ["x", "u"], ["f"])
+    dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[0] + dt * x[1], x[1] + dt * u[0])], ["x", "u"], ["f"])
 
     Q = np.eye(nx)
     R = np.eye(nu)
