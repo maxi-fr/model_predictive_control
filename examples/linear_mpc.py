@@ -21,6 +21,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from model_predictive_control.mpc import LinearMPC
 from model_predictive_control.ocp import LinearOCP
 from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
 
@@ -110,13 +111,15 @@ ocp = LinearOCP(
     h_term=h_term,
 )
 
-# Setup using multiple shooting (sparse) and qrqp backend
-ocp.setup(
-    method="multiple_shooting",
-    dynamics_type="discrete",
-    solver="qrqp",
-    solver_opts={"print_iter": False, "print_header": False},
-)
+# Setup using LinearMPC wrapper with multiple shooting (sparse) and qrqp backend
+setup_args = {
+    "method": "multiple_shooting",
+    "dynamics_type": "discrete",
+    "solver": "qrqp",
+    "solver_opts": {"print_iter": False, "print_header": False},
+}
+
+mpc = LinearMPC(linear_ocp=ocp, setup_args=setup_args)
 
 # Simulation loop
 x0_val = np.array([1.5, 0.0])  # Start near the bound
@@ -127,20 +130,12 @@ X_open_loop = np.zeros((N_sim, N_horizon + 1, nx))
 X_closed_loop[0, :] = x0_val
 current_x = x0_val
 
-# Initialize warm-start variables
-X_guess = None
-U_guess = None
-
 for k in range(N_sim):
-    X_opt, U_opt, status = ocp.solve(current_x)
-
-    # In a real scenario, you could use warm starting like this:
-    # X_opt, U_opt, status = ocp.solve(current_x, X_guess=X_guess, U_guess=U_guess)
-
-    # Extract first control action
-    u_k = U_opt[0, :]
+    # Step the MPC
+    u_k = mpc.step(current_x)
 
     # Store predictions for plotting
+    X_opt, _ = mpc.get_last_open_loop_predictions()
     X_open_loop[k, :, :] = X_opt
 
     # Apply control to system
@@ -152,10 +147,6 @@ for k in range(N_sim):
 
     # Update current state
     current_x = x_next
-
-    # Shift trajectories for next warm start
-    X_guess = np.vstack((X_opt[1:, :], X_opt[-1:, :]))
-    U_guess = np.vstack((U_opt[1:, :], U_opt[-1:, :]))
 
 print("Simulation finished.")
 
