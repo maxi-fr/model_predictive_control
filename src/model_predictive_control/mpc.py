@@ -47,6 +47,19 @@ class MPC:
         else:
             self._U_guess = np.zeros((self.N, self.nu))
 
+        self.last_X_opt: np.ndarray | None = None
+        self.last_U_opt: np.ndarray | None = None
+
+    def get_last_open_loop_predictions(self) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """
+        Returns the open-loop state and control trajectory predictions from the last solve.
+
+        Returns:
+            Tuple of (X_opt, U_opt), where X_opt has shape (N + 1, nx) and U_opt has shape (N, nu).
+            Returns (None, None) if step() has not been called yet.
+        """
+        return self.last_X_opt, self.last_U_opt
+
     def step(self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None) -> np.ndarray:
         """
         Solves the MPC problem for the current state and returns the control action.
@@ -76,6 +89,9 @@ class MPC:
             "success" not in status.lower() and "succeeded" not in status.lower() and "optimal" not in status.lower()
         ):
             raise RuntimeError(f"OCP solve failed with status: {status}")
+
+        self.last_X_opt = X_opt
+        self.last_U_opt = U_opt
 
         # Shift guesses for the next step
         self._X_guess = np.roll(X_opt, -1, axis=0)
@@ -128,6 +144,19 @@ class LinearMPC:
         else:
             self._U_guess = np.zeros((self.N, self.nu))
 
+        self.last_X_opt: np.ndarray | None = None
+        self.last_U_opt: np.ndarray | None = None
+
+    def get_last_open_loop_predictions(self) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """
+        Returns the open-loop state and control trajectory predictions from the last solve.
+
+        Returns:
+            Tuple of (X_opt, U_opt), where X_opt has shape (N + 1, nx) and U_opt has shape (N, nu).
+            Returns (None, None) if step() has not been called yet.
+        """
+        return self.last_X_opt, self.last_U_opt
+
     def step(self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None) -> np.ndarray:
         """
         Solves the Linear MPC problem for the current state and returns the control action.
@@ -152,6 +181,9 @@ class LinearMPC:
             "success" not in status.lower() and "succeeded" not in status.lower() and "optimal" not in status.lower()
         ):
             raise RuntimeError(f"LinearOCP solve failed with status: {status}")
+
+        self.last_X_opt = X_opt
+        self.last_U_opt = U_opt
 
         # Shift guesses for the next step
         self._X_guess = np.roll(X_opt, -1, axis=0)
