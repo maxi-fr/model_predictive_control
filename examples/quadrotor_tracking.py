@@ -7,7 +7,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.16.7
 #   kernelspec:
-#     display_name: python3
+#     display_name: model-predictive-control (3.12.1)
 #     language: python
 #     name: python3
 # ---
@@ -149,11 +149,11 @@ for k in range(N + 1):
     t = time[k]
 
     # X position progresses linearly
-    X_ref[k, 0] = 1.0 * t
+    X_ref[k, 0] = 1.0 - 1.0 * t
     # Y position follows a sine wave to create the S-shape
     X_ref[k, 1] = 2.0 * np.sin(2 * np.pi * t / T_final)
-    # Z position stays constant at 1.0m altitude
-    X_ref[k, 2] = 1.0
+    # Z position also progresses linearly
+    X_ref[k, 2] = 1.0 + 0.5 * t
 
     # Velocities (derivatives of positions)
     X_ref[k, 3] = 1.0  # v_x
@@ -200,7 +200,7 @@ terminal_objective = terminal_tracking_objective(Qf, np.zeros(nx))
 # Constraints
 # Control inputs limits
 u_min_val = 0.0  # Minimum thrust (N)
-u_max_val = 5.0  # Maximum thrust per motor (N)
+u_max_val = 3.0  # Maximum thrust per motor (N)
 u_min = np.array([u_min_val] * nu)
 u_max = np.array([u_max_val] * nu)
 
@@ -276,7 +276,7 @@ print(f"\nSolver Status: {status}")
 fig, axs = plt.subplots(3, 1, figsize=(10, 12))
 
 # Position X, Y, Z vs Reference
-for _i, (idx, label) in enumerate(zip([0, 1, 2], ["X [m]", "Y [m]", "Z [m]"], strict=False)):
+for idx, label in enumerate(["X [m]", "Y [m]", "Z [m]"]):
     axs[0].plot(time, X_opt[:, idx], label=f"Optimal {label}", linewidth=2)
     axs[0].plot(time, X_ref[:, idx], label=f"Reference {label}", linestyle="--", alpha=0.7)
 axs[0].set_title("Position Tracking")
@@ -315,6 +315,8 @@ plt.show()
 # 3D Path Plot
 fig_3d = plt.figure(figsize=(10, 8))
 ax_3d = fig_3d.add_subplot(111, projection="3d")
+ax_3d.set_aspect("equal")
+
 ax_3d.plot(X_ref[:, 0], X_ref[:, 1], X_ref[:, 2], "--", color="gray", label="Reference Path")
 ax_3d.plot(X_opt[:, 0], X_opt[:, 1], X_opt[:, 2], "-b", linewidth=2, label="Optimal Path")
 ax_3d.set_xlabel("X [m]")
