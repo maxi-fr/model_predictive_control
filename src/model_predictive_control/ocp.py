@@ -1213,14 +1213,18 @@ class LinearOCP:
         X_ref_arr = None
         if x_ref is not None:
             X_ref_arr = np.asarray(x_ref, dtype=float)
+            if X_ref_arr.ndim == 1 and X_ref_arr.shape[0] == self.nx:
+                X_ref_arr = np.tile(X_ref_arr, (self.N + 1, 1))
             if X_ref_arr.shape != (self.N + 1, self.nx):
-                raise ValueError(f"x_ref must have shape ({self.N + 1}, {self.nx})")
+                raise ValueError(f"x_ref must have shape ({self.N + 1}, {self.nx}) or ({self.nx},)")
 
         U_ref_arr = None
         if u_ref is not None:
             U_ref_arr = np.asarray(u_ref, dtype=float)
+            if U_ref_arr.ndim == 1 and U_ref_arr.shape[0] == self.nu:
+                U_ref_arr = np.tile(U_ref_arr, (self.N, 1))
             if U_ref_arr.shape != (self.N, self.nu):
-                raise ValueError(f"u_ref must have shape ({self.N}, {self.nu})")
+                raise ValueError(f"u_ref must have shape ({self.N}, {self.nu}) or ({self.nu},)")
 
         if self._method == "multiple_shooting":
             lba = self._qp_setup["lba"].copy()
