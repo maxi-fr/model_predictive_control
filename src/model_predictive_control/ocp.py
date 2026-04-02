@@ -2,13 +2,14 @@ from typing import Any
 
 import casadi as ca
 import numpy as np
+import numpy.typing as npt
 import scipy.linalg
 from casadi.casadi import Function
 from numpy._typing import ArrayLike
 
 
-class OCP:
-    def __init__(
+class OCP:  # noqa: D101 TODO: add doc string
+    def __init__(  # noqa: PLR0913
         self,
         N: int,
         dt: float,
@@ -37,70 +38,79 @@ class OCP:
 
         self._nx, self._nu = self._validate_dimensions()
 
-    def _validate_dimensions(self) -> tuple[int, int]:
-        """Validates all casadi functions and returns nx and nu."""
-
+    def _validate_dimensions(self) -> tuple[int, int]:  # noqa: PLR0912, C901
+        """Validate all casadi functions and returns nx and nu."""
         if self.dynamics.n_in() < 2:
-            raise ValueError("Dynamics function must take at least two arguments (state x and control u).")
+            msg = "Dynamics function must take at least two arguments (state x and control u)."
+            raise ValueError(msg)
 
         nx = self.dynamics.size_in(0)[0]
         nu = self.dynamics.size_in(1)[0]
 
         if self.dynamics.size_out(0)[0] != nx:
-            raise ValueError(
-                f"Dynamics function output size ({self.dynamics.size_out(0)[0]}) must match state size ({nx})."
-            )
+            msg = f"Dynamics function output size ({self.dynamics.size_out(0)[0]}) must match state size ({nx})."
+            raise ValueError(msg)
 
         if self.objective.size_in(0)[0] != nx or self.objective.size_in(1)[0] != nu:
-            raise ValueError(f"Objective function inputs must match state ({nx}) and control ({nu}) sizes.")
+            msg = f"Objective function inputs must match state ({nx}) and control ({nu}) sizes."
+            raise ValueError(msg)
 
         if self.objective.n_in() == 4 and (self.objective.size_in(2)[0] != nx or self.objective.size_in(3)[0] != nu):
-            raise ValueError(f"Objective function reference inputs must match state ({nx}) and control ({nu}) sizes.")
+            msg = f"Objective function reference inputs must match state ({nx}) and control ({nu}) sizes."
+            raise ValueError(msg)
 
         if self.objective.size_out(0)[0] != 1:
-            raise ValueError("Objective function must return a scalar.")
+            msg = "Objective function must return a scalar."
+            raise ValueError(msg)
 
         if (
             hasattr(self, "eq_constraints")
             and self.eq_constraints is not None
             and (self.eq_constraints.size_in(0)[0] != nx or self.eq_constraints.size_in(1)[0] != nu)
         ):
-            raise ValueError(f"eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes.")
+            msg = f"eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes."
+            raise ValueError(msg)
 
         if (
             hasattr(self, "in_eq_constraints")
             and self.in_eq_constraints is not None
             and (self.in_eq_constraints.size_in(0)[0] != nx or self.in_eq_constraints.size_in(1)[0] != nu)
         ):
-            raise ValueError(f"in_eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes.")
+            msg = f"in_eq_constraints function inputs must match state ({nx}) and control ({nu}) sizes."
+            raise ValueError(msg)
 
         if hasattr(self, "terminal_objective") and self.terminal_objective is not None:
             if self.terminal_objective.size_in(0)[0] != nx:
-                raise ValueError(f"terminal_objective function input must match state ({nx}) size.")
+                msg = f"terminal_objective function input must match state ({nx}) size."
+                raise ValueError(msg)
 
             if self.terminal_objective.n_in() == 2 and self.terminal_objective.size_in(1)[0] != nx:
-                raise ValueError(f"terminal_objective function reference input must match state ({nx}) size.")
+                msg = f"terminal_objective function reference input must match state ({nx}) size."
+                raise ValueError(msg)
 
             if self.terminal_objective.size_out(0)[0] != 1:
-                raise ValueError("terminal_objective function must return a scalar.")
+                msg = "terminal_objective function must return a scalar."
+                raise ValueError(msg)
 
         if (
             hasattr(self, "terminal_eq_constraints")
             and self.terminal_eq_constraints is not None
             and (self.terminal_eq_constraints.size_in(0)[0] != nx)
         ):
-            raise ValueError(f"terminal_eq_constraints function input must match state ({nx}) size.")
+            msg = f"terminal_eq_constraints function input must match state ({nx}) size."
+            raise ValueError(msg)
 
         if (
             hasattr(self, "terminal_in_eq_constraints")
             and self.terminal_in_eq_constraints is not None
             and (self.terminal_in_eq_constraints.size_in(0)[0] != nx)
         ):
-            raise ValueError(f"terminal_in_eq_constraints function input must match state ({nx}) size.")
+            msg = f"terminal_in_eq_constraints function input must match state ({nx}) size."
+            raise ValueError(msg)
 
         return nx, nu
 
-    def linearize(
+    def linearize(  # noqa: PLR0915, PLR0912, PLR0913, C901
         self,
         x_bar: ArrayLike,
         u_bar: ArrayLike,
@@ -109,10 +119,7 @@ class OCP:
         x_ref: ArrayLike | None = None,
         u_ref: ArrayLike | None = None,
     ) -> "LinearOCP":
-        """
-        Linearizes the OCP around a nominal state and control trajectory (or fixed point)
-        and returns a LinearOCP instance.
-        """
+        """Linearize the OCP around a nominal state and control trajectory (or fixed point)."""
         x_bar = np.asarray(x_bar, dtype=float)
         u_bar = np.asarray(u_bar, dtype=float)
 
@@ -129,14 +136,16 @@ class OCP:
             else:
                 X_ref = np.asarray(x_ref, dtype=float)
                 if X_ref.shape != (N + 1, nx):
-                    raise ValueError(f"x_ref trajectory must have shape ({N + 1}, {nx})")
+                    msg = f"x_ref trajectory must have shape ({N + 1}, {nx})"
+                    raise ValueError(msg)
 
             if u_ref is None:
                 U_ref = np.zeros((N, nu))
             else:
                 U_ref = np.asarray(u_ref, dtype=float)
                 if U_ref.shape != (N, nu):
-                    raise ValueError(f"u_ref trajectory must have shape ({N}, {nu})")
+                    msg = f"u_ref trajectory must have shape ({N}, {nu})"
+                    raise ValueError(msg)
         elif (
             hasattr(self, "terminal_objective")
             and self.terminal_objective is not None
@@ -147,24 +156,29 @@ class OCP:
             else:
                 X_ref = np.asarray(x_ref, dtype=float)
                 if X_ref.shape != (N + 1, nx):
-                    raise ValueError(f"x_ref trajectory must have shape ({N + 1}, {nx})")
+                    msg = f"x_ref trajectory must have shape ({N + 1}, {nx})"
+                    raise ValueError(msg)
 
         if x_bar.ndim == 1:
             if x_bar.shape[0] != nx:
-                raise ValueError(f"x_bar fixed point must have size {nx}")
+                msg = f"x_bar fixed point must have size {nx}"
+                raise ValueError(msg)
             X_bar = np.tile(x_bar, (N + 1, 1))
         else:
             if x_bar.shape != (N + 1, nx):
-                raise ValueError(f"x_bar trajectory must have shape ({N + 1}, {nx})")
+                msg = f"x_bar trajectory must have shape ({N + 1}, {nx})"
+                raise ValueError(msg)
             X_bar = x_bar
 
         if u_bar.ndim == 1:
             if u_bar.shape[0] != nu:
-                raise ValueError(f"u_bar fixed point must have size {nu}")
+                msg = f"u_bar fixed point must have size {nu}"
+                raise ValueError(msg)
             U_bar = np.tile(u_bar, (N, 1))
         else:
             if u_bar.shape != (N, nu):
-                raise ValueError(f"u_bar trajectory must have shape ({N}, {nu})")
+                msg = f"u_bar trajectory must have shape ({N}, {nu})"
+                raise ValueError(msg)
             U_bar = u_bar
 
         if dynamics_type == "continuous":
@@ -187,7 +201,8 @@ class OCP:
         elif dynamics_type == "discrete":
             dyn_func = self.dynamics
         else:
-            raise ValueError(f"Unknown dynamics_type: {dynamics_type}")
+            msg = f"Unknown dynamics_type: {dynamics_type}"
+            raise ValueError(msg)
 
         # Dynamics symbolic derivatives
         x_sym = ca.MX.sym("x", nx)
@@ -277,6 +292,9 @@ class OCP:
                 r[k] = np.array(r_func(xk, uk)).flatten()
 
             if has_stage_constraints:
+                assert F is not None
+                assert G is not None
+                assert h is not None
                 F[k] = np.array(F_func(xk, uk))
                 G[k] = np.array(G_func(xk, uk))
                 h[k] = np.array(h_func_val(xk, uk)).flatten()
@@ -346,7 +364,7 @@ class OCP:
             h_term=h_term,
         )
 
-    def setup(
+    def setup(  # noqa: D102, PLR0915, PLR0912, PLR0913, C901 TODO: fix issues
         self,
         method: str = "multiple_shooting",
         dynamics_type: str = "continuous",
@@ -394,7 +412,8 @@ class OCP:
         elif dynamics_type == "discrete":
             dyn_func = self.dynamics
         else:
-            raise ValueError(f"Unknown dynamics_type: {dynamics_type}")
+            msg = f"Unknown dynamics_type: {dynamics_type}"
+            raise ValueError(msg)
 
         if method == "single_shooting":
             self._U = self._opti.variable(nu, self.N)
@@ -456,7 +475,8 @@ class OCP:
 
         elif method == "collocation":
             if dynamics_type == "discrete":
-                raise ValueError("Collocation method is not applicable to discrete dynamics.")
+                msg = "Collocation method is not applicable to discrete dynamics."
+                raise ValueError(msg)
 
             self._X = self._opti.variable(nx, self.N + 1)
             self._U = self._opti.variable(nu, self.N)
@@ -497,7 +517,8 @@ class OCP:
                 # Simpson's rule for state integration
                 self._opti.subject_to(x_k_next == x_k + (self.dt / 6.0) * (f_k + 4 * f_c + f_k_next))
         else:
-            raise ValueError(f"Unknown method: {method}")
+            msg = f"Unknown method: {method}"
+            raise ValueError(msg)
 
         # Terminal conditions
         x_N = self._X[:, self.N]
@@ -530,14 +551,14 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(
+    def solve(  # noqa: PLR0912, C901, TODO: refactor to fix issues
         self,
         x0: ArrayLike,
         X_guess: ArrayLike | None = None,
         U_guess: ArrayLike | None = None,
         x_ref: ArrayLike | None = None,
         u_ref: ArrayLike | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, str]:
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
         """
         Solves the OCP for a given initial state.
 
@@ -548,14 +569,16 @@ class OCP:
             x_ref: Optional time-varying state reference of shape (N + 1, nx).
             u_ref: Optional time-varying control reference of shape (N, nu).
 
-        Returns:
+        Returns
+        -------
             Tuple of (X_opt, U_opt, status)
             - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
             - U_opt: numpy array of optimal control trajectory of shape (N, nu)
             - status: string indicating solver status
         """
         if self._opti is None:
-            raise RuntimeError("OCP has not been set up. Call setup() first.")
+            msg = "OCP has not been set up. Call setup() first."
+            raise RuntimeError(msg)
 
         self._opti.set_value(self._x0_param, x0)
 
@@ -564,7 +587,8 @@ class OCP:
                 x_ref = np.zeros((self.N + 1, self._nx))
             x_ref_arr = np.asarray(x_ref, dtype=float)
             if x_ref_arr.shape != (self.N + 1, self._nx):
-                raise ValueError(f"x_ref must have shape ({self.N + 1}, {self._nx})")
+                msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
+                raise ValueError(msg)
             self._opti.set_value(self._x_ref_param, x_ref_arr.T)
 
         if self._u_ref_param is not None:
@@ -572,19 +596,22 @@ class OCP:
                 u_ref = np.zeros((self.N, self._nu))
             u_ref_arr = np.asarray(u_ref, dtype=float)
             if u_ref_arr.shape != (self.N, self._nu):
-                raise ValueError(f"u_ref must have shape ({self.N}, {self._nu})")
+                msg = f"u_ref must have shape ({self.N}, {self._nu})"
+                raise ValueError(msg)
             self._opti.set_value(self._u_ref_param, u_ref_arr.T)
 
         if X_guess is not None:
             X_guess = np.asarray(X_guess)
             if X_guess.shape != (self.N + 1, self._nx):
-                raise ValueError(f"X_guess must have shape ({self.N + 1}, {self._nx})")
+                msg = f"X_guess must have shape ({self.N + 1}, {self._nx})"
+                raise ValueError(msg)
             self._opti.set_initial(self._X, X_guess.T)
 
         if U_guess is not None:
             U_guess = np.asarray(U_guess)
             if U_guess.shape != (self.N, self._nu):
-                raise ValueError(f"U_guess must have shape ({self.N}, {self._nu})")
+                msg = f"U_guess must have shape ({self.N}, {self._nu})"
+                raise ValueError(msg)
             self._opti.set_initial(self._U, U_guess.T)
 
         try:
@@ -592,11 +619,11 @@ class OCP:
             X_opt = sol.value(self._X)
             U_opt = sol.value(self._U)
             status: str = sol.stats()["return_status"]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # If solve fails, return the values at the last iteration
             X_opt = self._opti.debug.value(self._X)
             U_opt = self._opti.debug.value(self._U)
-            status = f"Solve_Failed: {str(e)}"
+            status = f"Solve_Failed: {e!s}"
 
         # Ensure 2D arrays even if nx=1 or nu=1
         if isinstance(X_opt, np.ndarray) and X_opt.ndim == 1:
@@ -607,7 +634,7 @@ class OCP:
         return X_opt.T, U_opt.T, status
 
 
-def quadratic_objective(
+def quadratic_objective(  # noqa: D103, TODO: fix D103
     Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
 ) -> Function:
     nx = Q.shape[0]
@@ -623,22 +650,27 @@ def quadratic_objective(
         N = np.zeros((nx, nu))
 
     if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
-        raise ValueError("Matrix Q must be square and match state dimension.")
+        msg = "Matrix Q must be square and match state dimension."
+        raise ValueError(msg)
     if R.shape[0] != R.shape[1] or R.shape[0] != nu:
-        raise ValueError("Matrix R must be square and match control dimension.")
+        msg = "Matrix R must be square and match control dimension."
+        raise ValueError(msg)
     if q.shape[0] != nx:
-        raise ValueError("Vector q must match state dimension.")
+        msg = "Vector q must match state dimension."
+        raise ValueError(msg)
     if r.shape[0] != nu:
-        raise ValueError("Vector r must match control dimension.")
+        msg = "Vector r must match control dimension."
+        raise ValueError(msg)
     if N.shape[0] != nx or N.shape[1] != nu:
-        raise ValueError("Matrix N must match state and control dimensions.")
+        msg = "Matrix N must match state and control dimensions."
+        raise ValueError(msg)
 
     return ca.Function(
         "quadr_obj", [x, u], [x.T @ Q @ x + x.T @ q + u.T @ R @ u + u.T @ r + x.T @ N @ u], ["x", "u"], ["f"]
     )
 
 
-def tracking_objective(
+def tracking_objective(  # noqa: D103, TODO: fix D103
     Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
 ) -> Function:
     nx = Q.shape[0]
@@ -656,15 +688,20 @@ def tracking_objective(
         N = np.zeros((nx, nu))
 
     if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
-        raise ValueError("Matrix Q must be square and match state dimension.")
+        msg = "Matrix Q must be square and match state dimension."
+        raise ValueError(msg)
     if R.shape[0] != R.shape[1] or R.shape[0] != nu:
-        raise ValueError("Matrix R must be square and match control dimension.")
+        msg = "Matrix R must be square and match control dimension."
+        raise ValueError(msg)
     if q.shape[0] != nx:
-        raise ValueError("Vector q must match state dimension.")
+        msg = "Vector q must match state dimension."
+        raise ValueError(msg)
     if r.shape[0] != nu:
-        raise ValueError("Vector r must match control dimension.")
+        msg = "Vector r must match control dimension."
+        raise ValueError(msg)
     if N.shape[0] != nx or N.shape[1] != nu:
-        raise ValueError("Matrix N must match state and control dimensions.")
+        msg = "Matrix N must match state and control dimensions."
+        raise ValueError(msg)
 
     dx = x - x_ref
     du = u - u_ref
@@ -678,12 +715,13 @@ def tracking_objective(
     )
 
 
-def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:
+def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
     nx = F.shape[1]
     nu = G.shape[1]
 
     if F.shape[0] != G.shape[0] or F.shape[0] != h.shape[0]:
-        raise ValueError("The number of rows in F, G, and h must be equal.")
+        msg = "The number of rows in F, G, and h must be equal."
+        raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
@@ -691,14 +729,16 @@ def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:
     return ca.Function("lin_con", [x, u], [F @ x + G @ u - h], ["x", "u"], ["f"])
 
 
-def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:
+def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
     nx = A.shape[1]
     nu = B.shape[1]
 
     if A.shape[0] != nx:
-        raise ValueError("Matrix A must be square.")
+        msg = "Matrix A must be square."
+        raise ValueError(msg)
     if B.shape[0] != nx:
-        raise ValueError("Matrix B must have the same number of rows as A.")
+        msg = "Matrix B must have the same number of rows as A."
+        raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
@@ -706,10 +746,11 @@ def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:
     return ca.Function("lin_dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
 
 
-def state_bounds_constraints(x_min: np.ndarray, x_max: np.ndarray, nu: int) -> Function:
+def state_bounds_constraints(x_min: np.ndarray, x_max: np.ndarray, nu: int) -> Function:  # noqa: D103, TODO: fix D103
     nx = x_min.shape[0]
     if x_max.shape[0] != nx:
-        raise ValueError("x_min and x_max must have the same length.")
+        msg = "x_min and x_max must have the same length."
+        raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
@@ -717,10 +758,11 @@ def state_bounds_constraints(x_min: np.ndarray, x_max: np.ndarray, nu: int) -> F
     return ca.Function("state_bounds", [x, u], [ca.vertcat(x_min - x, x - x_max)], ["x", "u"], ["f"])
 
 
-def control_bounds_constraints(u_min: np.ndarray, u_max: np.ndarray, nx: int) -> Function:
+def control_bounds_constraints(u_min: np.ndarray, u_max: np.ndarray, nx: int) -> Function:  # noqa: D103, TODO: fix D103
     nu = u_min.shape[0]
     if u_max.shape[0] != nu:
-        raise ValueError("u_min and u_max must have the same length.")
+        msg = "u_min and u_max must have the same length."
+        raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
@@ -728,26 +770,30 @@ def control_bounds_constraints(u_min: np.ndarray, u_max: np.ndarray, nx: int) ->
     return ca.Function("control_bounds", [x, u], [ca.vertcat(u_min - u, u - u_max)], ["x", "u"], ["f"])
 
 
-def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:
+def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
     nx = Q.shape[0]
 
     if Q.shape[1] != nx:
-        raise ValueError("Matrix Q must be square.")
+        msg = "Matrix Q must be square."
+        raise ValueError(msg)
     if q.shape[0] != nx:
-        raise ValueError("Vector q must have the same length as Q.")
+        msg = "Vector q must have the same length as Q."
+        raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
 
     return ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
 
 
-def terminal_tracking_objective(Q: np.ndarray, q: np.ndarray) -> Function:
+def terminal_tracking_objective(Q: np.ndarray, q: np.ndarray) -> Function:  # noqa: D103   TODO: fix
     nx = Q.shape[0]
 
     if Q.shape[1] != nx:
-        raise ValueError("Matrix Q must be square.")
+        msg = "Matrix Q must be square."
+        raise ValueError(msg)
     if q.shape[0] != nx:
-        raise ValueError("Vector q must have the same length as Q.")
+        msg = "Vector q must have the same length as Q."
+        raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
     x_ref = ca.MX.sym("x_ref", nx)
@@ -757,19 +803,20 @@ def terminal_tracking_objective(Q: np.ndarray, q: np.ndarray) -> Function:
     return ca.Function("term_tracking_obj", [x, x_ref], [dx.T @ Q @ dx + dx.T @ q], ["x", "x_ref"], ["f"])
 
 
-def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:
+def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
     nx = F.shape[1]
 
     if F.shape[0] != h.shape[0]:
-        raise ValueError("The number of rows in F and h must be equal.")
+        msg = "The number of rows in F and h must be equal."
+        raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
 
     return ca.Function("term_lin_con", [x], [F @ x - h], ["x"], ["f"])
 
 
-class LinearOCP:
-    def __init__(
+class LinearOCP:  # noqa: D101
+    def __init__(  # noqa: PLR0913  # TODO: fix D101
         self,
         N: int,
         dt: float,
@@ -789,7 +836,7 @@ class LinearOCP:
         h_term: np.ndarray | None = None,
     ) -> None:
         """
-        Initializes a Linear Optimal Control Problem.
+        Initialize Linear Optimal Control Problem.
 
         Cost stage: 0.5 * (x^T Q x + u^T R u) + x^T N_cross u + q^T x + r^T u
         Terminal cost: 0.5 * x_N^T Qf x_N + qf^T x_N
@@ -846,14 +893,15 @@ class LinearOCP:
     def _is_time_varying(self, arr: np.ndarray, expected_dims: int) -> bool:
         return bool(arr.ndim == expected_dims + 1 and arr.shape[0] == self.N)
 
-    def _validate_dimensions(self) -> None:
+    def _validate_dimensions(self) -> None:  # noqa: C901
         nx = self.nx
         nu = self.nu
         N = self.N
 
         def check_shape(arr: np.ndarray, base_shape: tuple[int, ...], name: str) -> None:
-            if arr.shape != base_shape and arr.shape != (N,) + base_shape:
-                raise ValueError(f"Array {name} must be {base_shape} or {(N,) + base_shape}")
+            if arr.shape not in (base_shape, (N, *base_shape)):
+                msg = f"Array {name} must be {base_shape} or {(N, *base_shape)}"
+                raise ValueError(msg)
 
         check_shape(self.A, (nx, nx), "A")
         check_shape(self.B, (nx, nu), "B")
@@ -864,13 +912,16 @@ class LinearOCP:
         check_shape(self.N_cross, (nx, nu), "N_cross")
 
         if self.Qf.shape != (nx, nx):
-            raise ValueError(f"Matrix Qf must be ({nx}, {nx})")
+            msg = f"Matrix Qf must be ({nx}, {nx})"
+            raise ValueError(msg)
         if self.qf.shape != (nx,):
-            raise ValueError(f"Vector qf must be ({nx},)")
+            msg = f"Vector qf must be ({nx},)"
+            raise ValueError(msg)
 
         if self.F is not None or self.G is not None or self.h is not None:
             if self.F is None or self.G is None or self.h is None:
-                raise ValueError("If any of F, G, h are provided, all three must be provided.")
+                msg = "If any of F, G, h are provided, all three must be provided."
+                raise ValueError(msg)
 
             nc = self.F.shape[-2]
             check_shape(self.F, (nc, nx), "F")
@@ -879,49 +930,17 @@ class LinearOCP:
 
         if self.F_term is not None or self.h_term is not None:
             if self.F_term is None or self.h_term is None:
-                raise ValueError("If either F_term or h_term is provided, both must be provided.")
+                msg = "If either F_term or h_term is provided, both must be provided."
+                raise ValueError(msg)
             nc_term = self.F_term.shape[0]
             if self.F_term.shape != (nc_term, nx):
-                raise ValueError(f"Matrix F_term must be ({nc_term}, {nx})")
+                msg = f"Matrix F_term must be ({nc_term}, {nx})"
+                raise ValueError(msg)
             if self.h_term.shape != (nc_term,):
-                raise ValueError(f"Vector h_term must be ({nc_term},)")
+                msg = f"Vector h_term must be ({nc_term},)"
+                raise ValueError(msg)
 
-    def _get_at_k(self, arr: np.ndarray, k: int) -> np.ndarray:
-        if arr is None:
-            return None
-        # If the array has the time dimension, extract k-th slice
-        # e.g., if A is (N, nx, nx) -> A.ndim == 3 -> returns A[k]
-        # if A is (nx, nx) -> A.ndim == 2 -> returns A
-
-        # Determine the base dimensions based on the attribute
-        # For matrices like A, B, Q, R, N_cross, F, G, it's 2
-        # For vectors like q, r, h, it's 1
-        1 if len(arr.shape) == 1 or (
-            len(arr.shape) == 2 and arr.shape[0] == self.N and arr.shape[1] != self.N and arr.shape[1] != arr.shape[0]
-        ) else 2
-        # Actually better to rely on known attributes
-
-        arr.shape[-1] == self.nx or arr.shape[-1] == self.nu or (self.h is not None and np.array_equal(arr, self.h))
-        if len(arr.shape) == 1:
-            return arr
-        elif len(arr.shape) == 2:
-            if arr.shape[0] == self.N and arr.shape[1] in (self.nx, self.nu) and not np.array_equal(arr, self.A):
-                # Time-varying vector
-                return arr[k]
-            elif self.h is not None and np.array_equal(arr, self.h):
-                if arr.shape[0] == self.N:
-                    return arr[k]
-                else:
-                    return arr
-            else:
-                # Constant matrix
-                return arr
-        elif len(arr.shape) == 3:
-            # Time-varying matrix
-            return arr[k]
-        return arr
-
-    def setup(
+    def setup(  # noqa: PLR0915, PLR0912, C901   # TODO: refactor
         self,
         method: str = "multiple_shooting",
         dynamics_type: str = "discrete",
@@ -930,10 +949,11 @@ class LinearOCP:
         solver_opts: dict[str, Any] | None = None,
     ) -> None:
         """
-        Sets up the QP solver for the given method and solver backend.
+        Set up the QP solver for the given method and solver backend.
+
         method: "multiple_shooting" (sparse) or "single_shooting" (condensed)
         dynamics_type: "discrete" or "continuous" (will be exactly discretized using ZOH)
-        solver: The backend solver for ca.qpsol (e.g. 'qrqp', 'osqp')
+        solver: The backend solver for ca.qpsol (e.g. 'qrqp', 'osqp').
         """
         self._method = method
         nx = self.nx
@@ -958,7 +978,8 @@ class LinearOCP:
                 A_d_list.append(Ak)
                 B_d_list.append(Bk)
             else:
-                raise ValueError(f"Unknown dynamics_type: {dynamics_type}")
+                msg = f"Unknown dynamics_type: {dynamics_type}"
+                raise ValueError(msg)
 
         # "expand" is for nlpsol, conic doesn't need it.
         p_opts = {}
@@ -1168,16 +1189,17 @@ class LinearOCP:
             }
 
         else:
-            raise ValueError(f"Unknown method: {method}")
+            msg = f"Unknown method: {method}"
+            raise ValueError(msg)
 
-    def solve(
+    def solve(  # noqa: PLR0915, PLR0912, C901  # TODO: refactor to fix PLR0915, PLR0912
         self,
         x0: ArrayLike,
         X_guess: ArrayLike | None = None,
         U_guess: ArrayLike | None = None,
         x_ref: ArrayLike | None = None,
         u_ref: ArrayLike | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, str]:
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
         """
         Solves the Linear OCP for a given initial state.
 
@@ -1188,27 +1210,32 @@ class LinearOCP:
             x_ref: Optional time-varying state reference of shape (N + 1, nx).
             u_ref: Optional time-varying control reference of shape (N, nu).
 
-        Returns:
+        Returns
+        -------
             Tuple of (X_opt, U_opt, status)
             - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
             - U_opt: numpy array of optimal control trajectory of shape (N, nu)
             - status: string indicating solver status
         """
         if self._solver_obj is None:
-            raise RuntimeError("LinearOCP has not been set up. Call setup() first.")
+            msg = "LinearOCP has not been set up. Call setup() first."
+            raise RuntimeError(msg)
 
         x0_arr = np.asarray(x0, dtype=float).flatten()
         if x0_arr.shape != (self.nx,):
-            raise ValueError(f"Initial state must have length {self.nx}")
+            msg = f"Initial state must have length {self.nx}"
+            raise ValueError(msg)
 
         if X_guess is not None:
             X_guess = np.asarray(X_guess)
             if X_guess.shape != (self.N + 1, self.nx):
-                raise ValueError(f"X_guess must have shape ({self.N + 1}, {self.nx})")
+                msg = f"X_guess must have shape ({self.N + 1}, {self.nx})"
+                raise ValueError(msg)
         if U_guess is not None:
             U_guess = np.asarray(U_guess)
             if U_guess.shape != (self.N, self.nu):
-                raise ValueError(f"U_guess must have shape ({self.N}, {self.nu})")
+                msg = f"U_guess must have shape ({self.N}, {self.nu})"
+                raise ValueError(msg)
 
         X_ref_arr = None
         if x_ref is not None:
@@ -1216,7 +1243,8 @@ class LinearOCP:
             if X_ref_arr.ndim == 1 and X_ref_arr.shape[0] == self.nx:
                 X_ref_arr = np.tile(X_ref_arr, (self.N + 1, 1))
             if X_ref_arr.shape != (self.N + 1, self.nx):
-                raise ValueError(f"x_ref must have shape ({self.N + 1}, {self.nx}) or ({self.nx},)")
+                msg = f"x_ref must have shape ({self.N + 1}, {self.nx}) or ({self.nx},)"
+                raise ValueError(msg)
 
         U_ref_arr = None
         if u_ref is not None:
@@ -1224,7 +1252,8 @@ class LinearOCP:
             if U_ref_arr.ndim == 1 and U_ref_arr.shape[0] == self.nu:
                 U_ref_arr = np.tile(U_ref_arr, (self.N, 1))
             if U_ref_arr.shape != (self.N, self.nu):
-                raise ValueError(f"u_ref must have shape ({self.N}, {self.nu}) or ({self.nu},)")
+                msg = f"u_ref must have shape ({self.N}, {self.nu}) or ({self.nu},)"
+                raise ValueError(msg)
 
         if self._method == "multiple_shooting":
             lba = self._qp_setup["lba"].copy()
@@ -1362,6 +1391,7 @@ class LinearOCP:
             X_opt = X_vec.reshape((self.N + 1, self.nx))
 
         else:
-            raise ValueError(f"Unknown method: {self._method}")
+            msg = f"Unknown method: {self._method}"
+            raise ValueError(msg)
 
         return X_opt, U_opt, status

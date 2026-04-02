@@ -10,7 +10,7 @@ def test_linear_ocp_validation() -> None:
     Q = np.eye(2)
     R = np.eye(1)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):  # noqa: PT011
         LinearOCP(N=10, dt=0.1, A=np.eye(3), B=B, Q=Q, R=R)
 
     ocp = LinearOCP(N=10, dt=0.1, A=A, B=B, Q=Q, R=R)
@@ -44,9 +44,9 @@ def test_linear_ocp_solve_multiple_shooting() -> None:
     np.testing.assert_allclose(U, U_warm, atol=1e-5)
 
     # Test bad warm start shapes
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):  # noqa: PT011
         ocp.solve(np.array([1.0, 0.0]), X_guess=np.zeros((6, 3)))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):  # noqa: PT011
         ocp.solve(np.array([1.0, 0.0]), U_guess=np.zeros((4, 1)))
 
 
@@ -76,7 +76,7 @@ def test_linear_ocp_solve_single_shooting() -> None:
     np.testing.assert_allclose(U, U_warm, atol=1e-5)
 
 
-@pytest.mark.parametrize("method", ["multiple_shooting", "single_shooting"])  # type: ignore[misc]
+@pytest.mark.parametrize("method", ["multiple_shooting", "single_shooting"])
 def test_linear_ocp_continuous(method: str) -> None:
     A = np.array([[0.0, 1.0], [0.0, 0.0]])
     B = np.array([[0.0], [1.0]])
@@ -91,11 +91,11 @@ def test_linear_ocp_continuous(method: str) -> None:
         solver_opts={"print_iter": False, "print_header": False},
     )
 
-    X, U, status = ocp.solve(np.array([1.0, 0.0]))
+    _X, _U, status = ocp.solve(np.array([1.0, 0.0]))
     assert status == "success"
 
 
-@pytest.mark.parametrize("solver", ["qrqp", "osqp"])  # type: ignore[misc]
+@pytest.mark.parametrize("solver", ["qrqp", "osqp"])
 def test_linear_ocp_solvers(solver: str) -> None:
     A = np.array([[1.0, 0.1], [0.0, 1.0]])
     B = np.array([[0.0], [0.1]])
@@ -110,7 +110,7 @@ def test_linear_ocp_solvers(solver: str) -> None:
         solver_opts={"print_iter": False, "print_header": False} if solver == "qrqp" else {},
     )
 
-    X, U, status = ocp.solve(np.array([1.0, 0.0]))
+    _X, _U, status = ocp.solve(np.array([1.0, 0.0]))
     assert "success" in status or status == "solved"  # osqp returns "solved" instead of "success"
 
 

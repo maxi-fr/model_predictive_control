@@ -135,7 +135,7 @@ for k in range(N_sim):
     u_k = mpc.step(current_x)
 
     # Store predictions for plotting
-    X_opt, _ = mpc.get_last_open_loop_predictions()
+    X_opt, U_opt = mpc.get_last_open_loop_predictions()
     X_open_loop[k, :, :] = X_opt
 
     # Apply control to system
@@ -148,7 +148,9 @@ for k in range(N_sim):
     # Update current state
     current_x = x_next
 
-print("Simulation finished.")
+    # Shift trajectories for next warm start
+    X_guess = np.vstack((X_opt[1:, :], X_opt[-1:, :]))
+    U_guess = np.vstack((U_opt[1:, :], U_opt[-1:, :]))
 
 # %% [markdown]
 # ## 4. Plot Results

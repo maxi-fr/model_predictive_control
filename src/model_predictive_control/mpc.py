@@ -1,6 +1,7 @@
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from numpy._typing import ArrayLike
 
 from model_predictive_control.ocp import OCP, LinearOCP
@@ -36,14 +37,16 @@ class MPC:
         if X_guess is not None:
             self._X_guess = np.asarray(X_guess, dtype=float)
             if self._X_guess.shape != (self.N + 1, self.nx):
-                raise ValueError(f"X_guess must have shape ({self.N + 1}, {self.nx})")
+                msg = f"X_guess must have shape ({self.N + 1}, {self.nx})"
+                raise ValueError(msg)
         else:
             self._X_guess = np.zeros((self.N + 1, self.nx))
 
         if U_guess is not None:
             self._U_guess = np.asarray(U_guess, dtype=float)
             if self._U_guess.shape != (self.N, self.nu):
-                raise ValueError(f"U_guess must have shape ({self.N}, {self.nu})")
+                msg = f"U_guess must have shape ({self.N}, {self.nu})"
+                raise ValueError(msg)
         else:
             self._U_guess = np.zeros((self.N, self.nu))
 
@@ -52,15 +55,18 @@ class MPC:
 
     def get_last_open_loop_predictions(self) -> tuple[np.ndarray | None, np.ndarray | None]:
         """
-        Returns the open-loop state and control trajectory predictions from the last solve.
+        Return the open-loop state and control trajectory predictions from the last solve.
 
-        Returns:
+        Returns
+        -------
             Tuple of (X_opt, U_opt), where X_opt has shape (N + 1, nx) and U_opt has shape (N, nu).
             Returns (None, None) if step() has not been called yet.
         """
         return self.last_X_opt, self.last_U_opt
 
-    def step(self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None) -> np.ndarray:
+    def step(
+        self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None
+    ) -> npt.NDArray[np.float64]:
         """
         Solves the MPC problem for the current state and returns the control action.
 
@@ -69,12 +75,14 @@ class MPC:
             x_ref: Optional time-varying state reference of shape (N + 1, nx) or constant reference of shape (nx,).
             u_ref: Optional time-varying control reference of shape (N, nu) or constant reference of shape (nu,).
 
-        Returns:
+        Returns
+        -------
             The control action to apply, as a numpy array of shape (nu,).
         """
         x_current_arr = np.asarray(x_current, dtype=float).flatten()
         if x_current_arr.shape != (self.nx,):
-            raise ValueError(f"Current state must have length {self.nx}")
+            msg = f"Current state must have length {self.nx}"
+            raise ValueError(msg)
 
         X_opt, U_opt, status = self.ocp.solve(
             x0=x_current_arr, X_guess=self._X_guess, U_guess=self._U_guess, x_ref=x_ref, u_ref=u_ref
@@ -88,7 +96,8 @@ class MPC:
         if "solve_failed" in status.lower() or (
             "success" not in status.lower() and "succeeded" not in status.lower() and "optimal" not in status.lower()
         ):
-            raise RuntimeError(f"OCP solve failed with status: {status}")
+            msg = f"OCP solve failed with status: {status}"
+            raise RuntimeError(msg)
 
         self.last_X_opt = X_opt
         self.last_U_opt = U_opt
@@ -103,7 +112,7 @@ class MPC:
         return U_opt[0]
 
 
-class LinearMPC:
+class LinearMPC:  # noqa: D101  TODO: fix
     def __init__(
         self,
         linear_ocp: LinearOCP,
@@ -112,7 +121,7 @@ class LinearMPC:
         U_guess: ArrayLike | None = None,
     ) -> None:
         """
-        Initializes the Linear Model Predictive Control wrapper.
+        Initialize the Linear Model Predictive Control wrapper.
 
         Args:
             linear_ocp: The Linear Optimal Control Problem to solve.
@@ -133,14 +142,16 @@ class LinearMPC:
         if X_guess is not None:
             self._X_guess = np.asarray(X_guess, dtype=float)
             if self._X_guess.shape != (self.N + 1, self.nx):
-                raise ValueError(f"X_guess must have shape ({self.N + 1}, {self.nx})")
+                msg = f"X_guess must have shape ({self.N + 1}, {self.nx})"
+                raise ValueError(msg)
         else:
             self._X_guess = np.zeros((self.N + 1, self.nx))
 
         if U_guess is not None:
             self._U_guess = np.asarray(U_guess, dtype=float)
             if self._U_guess.shape != (self.N, self.nu):
-                raise ValueError(f"U_guess must have shape ({self.N}, {self.nu})")
+                msg = f"U_guess must have shape ({self.N}, {self.nu})"
+                raise ValueError(msg)
         else:
             self._U_guess = np.zeros((self.N, self.nu))
 
@@ -149,15 +160,18 @@ class LinearMPC:
 
     def get_last_open_loop_predictions(self) -> tuple[np.ndarray | None, np.ndarray | None]:
         """
-        Returns the open-loop state and control trajectory predictions from the last solve.
+        Return the open-loop state and control trajectory predictions from the last solve.
 
-        Returns:
+        Returns
+        -------
             Tuple of (X_opt, U_opt), where X_opt has shape (N + 1, nx) and U_opt has shape (N, nu).
             Returns (None, None) if step() has not been called yet.
         """
         return self.last_X_opt, self.last_U_opt
 
-    def step(self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None) -> np.ndarray:
+    def step(
+        self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None
+    ) -> npt.NDArray[np.float64]:
         """
         Solves the Linear MPC problem for the current state and returns the control action.
 
@@ -166,12 +180,14 @@ class LinearMPC:
             x_ref: Optional time-varying state reference of shape (N + 1, nx) or constant reference of shape (nx,).
             u_ref: Optional time-varying control reference of shape (N, nu) or constant reference of shape (nu,).
 
-        Returns:
+        Returns
+        -------
             The control action to apply, as a numpy array of shape (nu,).
         """
         x_current_arr = np.asarray(x_current, dtype=float).flatten()
         if x_current_arr.shape != (self.nx,):
-            raise ValueError(f"Current state must have length {self.nx}")
+            msg = f"Current state must have length {self.nx}"
+            raise ValueError(msg)
 
         X_opt, U_opt, status = self.ocp.solve(
             x0=x_current_arr, X_guess=self._X_guess, U_guess=self._U_guess, x_ref=x_ref, u_ref=u_ref
@@ -180,7 +196,8 @@ class LinearMPC:
         if "solve_failed" in status.lower() or (
             "success" not in status.lower() and "succeeded" not in status.lower() and "optimal" not in status.lower()
         ):
-            raise RuntimeError(f"LinearOCP solve failed with status: {status}")
+            msg = f"LinearOCP solve failed with status: {status}"
+            raise RuntimeError(msg)
 
         self.last_X_opt = X_opt
         self.last_U_opt = U_opt

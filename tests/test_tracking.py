@@ -32,7 +32,7 @@ def test_ocp_with_tracking_reference() -> None:
     X_ref = np.ones((N + 1, nx)) * 2.0
     U_ref = np.zeros((N, nu))
 
-    X_opt, U_opt, status = ocp.solve(x0, x_ref=X_ref, u_ref=U_ref)
+    X_opt, _U_opt, status = ocp.solve(x0, x_ref=X_ref, u_ref=U_ref)
 
     assert status == "Solve_Succeeded"
     # The state should move towards the reference [2.0, 2.0]
@@ -65,7 +65,7 @@ def test_linear_ocp_with_tracking_reference() -> None:
     X_ref = np.ones((N + 1, nx)) * 1.0
     U_ref = np.zeros((N, nu))
 
-    X_opt, U_opt, status = lin_ocp.solve(x0, x_ref=X_ref, u_ref=U_ref)
+    X_opt, _U_opt, status = lin_ocp.solve(x0, x_ref=X_ref, u_ref=U_ref)
 
     assert status == "success"
     # It should track X_ref

@@ -7,7 +7,7 @@ from matplotlib.figure import Figure
 from numpy.typing import ArrayLike
 
 
-def plot_states(
+def plot_states(  # noqa: PLR0913
     time: ArrayLike,
     X: ArrayLike,
     indices: Sequence[int] | None = None,
@@ -19,7 +19,7 @@ def plot_states(
     bounds: Sequence[tuple[float | None, float | None] | None] | None = None,
 ) -> tuple[Figure, Axes]:
     """
-    Plots the states of the system over time.
+    Plot the states of the system over time.
 
     Args:
         time (array-like): Time array.
@@ -32,7 +32,8 @@ def plot_states(
         ylabel (str, optional): Y-axis label.
         bounds (list of tuples, optional): List of (min, max) bounds for the plotted states.
 
-    Returns:
+    Returns
+    -------
         tuple: (fig, ax)
     """
     X = np.asarray(X)
@@ -51,7 +52,7 @@ def plot_states(
         ax.plot(time, X[:, idx] if X.ndim == 2 else X, label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]  # type: ignore
+            min_val, max_val = bounds[i]  # type: ignore[misc]
             if min_val is not None:
                 ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
@@ -62,12 +63,12 @@ def plot_states(
 
     ax.set_ylabel(ylabel)
     ax.legend()
-    ax.grid(True)
+    ax.grid(visible=True)
 
     return fig, ax
 
 
-def plot_mpc_trajectories(
+def plot_mpc_trajectories(  # noqa: PLR0913
     time: ArrayLike,
     X_closed_loop: ArrayLike,
     X_open_loop: ArrayLike,
@@ -81,7 +82,7 @@ def plot_mpc_trajectories(
     step_interval: int = 1,
 ) -> tuple[Figure, Axes]:
     """
-    Plots the closed-loop state trajectories along with the open-loop predictions from MPC.
+    Plot the closed-loop state trajectories along with the open-loop predictions from MPC.
 
     Args:
         time (array-like): Time array of length (N_sim + 1).
@@ -98,7 +99,8 @@ def plot_mpc_trajectories(
         step_interval (int, optional):  Interval of prediction horizons to plot
                                         (e.g., plot every 5th prediction to avoid clutter).
 
-    Returns:
+    Returns
+    -------
         tuple: (fig, ax)
     """
     X_closed_loop = np.asarray(X_closed_loop)
@@ -150,7 +152,7 @@ def plot_mpc_trajectories(
 
         # Plot bounds
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]  # type: ignore
+            min_val, max_val = bounds[i]  # type: ignore[misc]
             if min_val is not None:
                 ax.axhline(min_val, color=color, linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
@@ -162,12 +164,12 @@ def plot_mpc_trajectories(
     ax.set_xlabel("Time [s]")
     ax.set_ylabel(ylabel)
     ax.legend()
-    ax.grid(True)
+    ax.grid(visible=True)
 
     return fig, ax
 
 
-def plot_controls(
+def plot_controls(  # noqa: PLR0913
     time: ArrayLike,
     U: ArrayLike,
     indices: Sequence[int] | None = None,
@@ -180,7 +182,7 @@ def plot_controls(
     step: bool = True,
 ) -> tuple[Figure, Axes]:
     """
-    Plots the controls of the system over time.
+    Plot the controls of the system over time.
 
     Args:
         time (array-like): Time array.
@@ -194,7 +196,8 @@ def plot_controls(
         bounds (list of tuples, optional): List of (min, max) bounds for the plotted controls.
         step (bool, optional): If True, plots using step function (where='post').
 
-    Returns:
+    Returns
+    -------
         tuple: (fig, ax)
     """
     U = np.asarray(U)
@@ -224,7 +227,7 @@ def plot_controls(
             ax.plot(plot_time, trace, label=labels[i])
 
         if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]  # type: ignore
+            min_val, max_val = bounds[i]  # type: ignore[misc]
             if min_val is not None:
                 ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
             if max_val is not None:
@@ -236,6 +239,6 @@ def plot_controls(
     ax.set_xlabel("Time [s]")
     ax.set_ylabel(ylabel)
     ax.legend()
-    ax.grid(True)
+    ax.grid(visible=True)
 
     return fig, ax

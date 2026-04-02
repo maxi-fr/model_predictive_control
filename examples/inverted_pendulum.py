@@ -34,7 +34,6 @@ from model_predictive_control.ocp import (
 )
 from model_predictive_control.plots import plot_controls, plot_states
 
-
 # %% [markdown]
 # ## 1. System Dynamics
 #
@@ -164,10 +163,8 @@ ocp.setup(
 )
 
 # Solve the OCP
-print(f"Solving OCP starting from initial state: {x0_val}")
 X_opt, U_opt, status = ocp.solve(x0_val)
 
-print(f"\nSolver Status: {status}")
 
 
 # %% [markdown]
@@ -219,4 +216,3 @@ plot_controls(
 
 plt.tight_layout()
 plt.show()
-

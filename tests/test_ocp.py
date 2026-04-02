@@ -42,7 +42,7 @@ def setup_simple_ocp(
 def test_ocp_validation_missing_attrs() -> None:
     # Test missing arguments explicitly
     with pytest.raises(TypeError, match="missing 2 required positional arguments: 'objective' and 'dynamics'"):
-        OCP(10, 0.1)  # type: ignore
+        OCP(10, 0.1)  # type: ignore[call-arg]
 
 
 def test_ocp_validation_wrong_dims() -> None:
@@ -60,7 +60,7 @@ def test_ocp_validation_wrong_dims() -> None:
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
     dyn_wrong = ca.Function("dyn", [x, u], [x[0] + u[0]])  # Returns scalar instead of nx
-    with pytest.raises(ValueError, match="Dynamics function output size .* must match state size"):
+    with pytest.raises(ValueError, match=r"Dynamics function output size .* must match state size"):
         setup_simple_ocp(dynamics=dyn_wrong)
 
     # Break dynamics missing argument
@@ -88,8 +88,8 @@ def test_ocp_validation_wrong_dims() -> None:
         setup_simple_ocp(terminal_eq_constraints=term_eq_wrong)
 
 
-@pytest.mark.parametrize(  # type: ignore[misc]
-    "method,dynamics_type",
+@pytest.mark.parametrize(
+    ("method", "dynamics_type"),
     [
         ("multiple_shooting", "continuous"),
         ("single_shooting", "continuous"),
@@ -150,7 +150,7 @@ def test_ocp_solve_without_setup() -> None:
         ocp.solve(np.array([1.0, 0.0]))
 
 
-@pytest.mark.parametrize("solver", ["ipopt"])  # type: ignore[misc]
+@pytest.mark.parametrize("solver", ["ipopt"])
 def test_ocp_custom_solver_opts(solver: str) -> None:
     ocp = setup_simple_ocp()
     # Use max_iter=2 to force a premature exit for solvers that support it (like ipopt)
@@ -160,7 +160,7 @@ def test_ocp_custom_solver_opts(solver: str) -> None:
     ocp.setup(solver=solver, plugin_opts=plugin_opts, solver_opts=solver_opts)
 
     x0 = np.array([10.0, 10.0])  # Hard state to solve in 2 iters
-    X_opt, U_opt, status = ocp.solve(x0)
+    _, _, status = ocp.solve(x0)
 
     if solver == "ipopt":
         # IPOPT should reach max iter and fail gracefully
