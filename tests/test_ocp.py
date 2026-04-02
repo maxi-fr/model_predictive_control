@@ -95,6 +95,7 @@ def test_ocp_validation_wrong_dims() -> None:
         ("single_shooting", "continuous"),
         ("collocation", "continuous"),
         ("multiple_shooting", "discrete"),
+        ("single_shooting", "discrete"),
     ],
 )
 def test_ocp_setup_and_solve(method: str, dynamics_type: str) -> None:
@@ -132,25 +133,38 @@ def test_ocp_setup_and_solve(method: str, dynamics_type: str) -> None:
     assert np.all(U_opt <= 1.0001)
 
 
+def test_ocp_collocation_discrete_fails() -> None:
+    x = ca.MX.sym("x", 2)
+    u = ca.MX.sym("u", 1)
+    x_next = ca.vertcat(x[0] + 0.1 * x[1], x[1] + 0.1 * u[0])
+    dyn = ca.Function("dyn", [x, u], [x_next])
+    ocp = setup_simple_ocp(dynamics=dyn)
+
+    with pytest.raises(ValueError, match="Collocation method is not applicable to discrete dynamics"):
+        ocp.setup(method="collocation", dynamics_type="discrete")
+
+
 def test_ocp_solve_without_setup() -> None:
     ocp = setup_simple_ocp()
     with pytest.raises(RuntimeError, match="OCP has not been set up"):
         ocp.solve(np.array([1.0, 0.0]))
 
 
-def test_ocp_custom_solver_opts() -> None:
+@pytest.mark.parametrize("solver", ["ipopt"])  # type: ignore[misc]
+def test_ocp_custom_solver_opts(solver: str) -> None:
     ocp = setup_simple_ocp()
-    # Use max_iter=2 to force a premature exit (user setting overrides default 1000)
+    # Use max_iter=2 to force a premature exit for solvers that support it (like ipopt)
     plugin_opts = {"expand": False}
     solver_opts = {"max_iter": 2}
 
-    ocp.setup(solver="ipopt", plugin_opts=plugin_opts, solver_opts=solver_opts)
+    ocp.setup(solver=solver, plugin_opts=plugin_opts, solver_opts=solver_opts)
 
     x0 = np.array([10.0, 10.0])  # Hard state to solve in 2 iters
     X_opt, U_opt, status = ocp.solve(x0)
 
-    # IPOPT should reach max iter and fail gracefully
-    assert "Maximum_Iterations_Exceeded" in status or "Solve_Failed" in status
+    if solver == "ipopt":
+        # IPOPT should reach max iter and fail gracefully
+        assert "Maximum_Iterations_Exceeded" in status or "Solve_Failed" in status
 
 
 def test_linearize_method() -> None:

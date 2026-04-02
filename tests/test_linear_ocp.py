@@ -76,7 +76,8 @@ def test_linear_ocp_solve_single_shooting() -> None:
     np.testing.assert_allclose(U, U_warm, atol=1e-5)
 
 
-def test_linear_ocp_continuous() -> None:
+@pytest.mark.parametrize("method", ["multiple_shooting", "single_shooting"])  # type: ignore[misc]
+def test_linear_ocp_continuous(method: str) -> None:
     A = np.array([[0.0, 1.0], [0.0, 0.0]])
     B = np.array([[0.0], [1.0]])
     Q = np.eye(2)
@@ -84,7 +85,7 @@ def test_linear_ocp_continuous() -> None:
 
     ocp = LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R)
     ocp.setup(
-        method="multiple_shooting",
+        method=method,
         dynamics_type="continuous",
         solver="qrqp",
         solver_opts={"print_iter": False, "print_header": False},
@@ -92,6 +93,25 @@ def test_linear_ocp_continuous() -> None:
 
     X, U, status = ocp.solve(np.array([1.0, 0.0]))
     assert status == "success"
+
+
+@pytest.mark.parametrize("solver", ["qrqp", "osqp"])  # type: ignore[misc]
+def test_linear_ocp_solvers(solver: str) -> None:
+    A = np.array([[1.0, 0.1], [0.0, 1.0]])
+    B = np.array([[0.0], [0.1]])
+    Q = np.eye(2) * 10
+    R = np.eye(1)
+
+    ocp = LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R)
+    ocp.setup(
+        method="multiple_shooting",
+        dynamics_type="discrete",
+        solver=solver,
+        solver_opts={"print_iter": False, "print_header": False} if solver == "qrqp" else {},
+    )
+
+    X, U, status = ocp.solve(np.array([1.0, 0.0]))
+    assert "success" in status or status == "solved"  # osqp returns "solved" instead of "success"
 
 
 def test_linear_ocp_constraints() -> None:
