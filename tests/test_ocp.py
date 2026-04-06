@@ -4,7 +4,7 @@ import casadi as ca
 import numpy as np
 import pytest
 
-from model_predictive_control.ocp import OCP
+from model_predictive_control.ocp import OCP, rk4_integrator
 
 
 def setup_simple_ocp(
@@ -109,7 +109,9 @@ def test_ocp_setup_and_solve(method: str, dynamics_type: str) -> None:
     else:
         ocp = setup_simple_ocp()
 
-    ocp.setup(method=method, dynamics_type=dynamics_type)
+    ocp.setup(
+        method=method, dynamics_type=dynamics_type, integrator=rk4_integrator if dynamics_type == "continuous" else None
+    )
 
     x0 = np.array([1.0, 0.0])
     X_opt, U_opt, status = ocp.solve(x0)
@@ -157,7 +159,7 @@ def test_ocp_custom_solver_opts(solver: str) -> None:
     plugin_opts = {"expand": False}
     solver_opts = {"max_iter": 2}
 
-    ocp.setup(solver=solver, plugin_opts=plugin_opts, solver_opts=solver_opts)
+    ocp.setup(solver=solver, plugin_opts=plugin_opts, solver_opts=solver_opts, integrator=rk4_integrator)
 
     x0 = np.array([10.0, 10.0])  # Hard state to solve in 2 iters
     _, _, status = ocp.solve(x0)

@@ -1395,3 +1395,25 @@ class LinearOCP:  # noqa: D101
             raise ValueError(msg)
 
         return X_opt, U_opt, status
+
+
+def rk4_integrator(dynamics: ca.Function, dt: float) -> ca.Function:  # noqa: D103
+    nx = dynamics.size_in(0)[0]
+    nu = dynamics.size_in(1)[0]
+    X0 = ca.MX.sym("X0", nx)
+    U0 = ca.MX.sym("U0", nu)
+    k1 = dynamics(X0, U0)
+    k2 = dynamics(X0 + dt / 2.0 * k1, U0)
+    k3 = dynamics(X0 + dt / 2.0 * k2, U0)
+    k4 = dynamics(X0 + dt * k3, U0)
+    X_next = X0 + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+    return ca.Function("dyn_rk4", [X0, U0], [X_next])
+
+
+def euler_integrator(dynamics: ca.Function, dt: float) -> ca.Function:  # noqa: D103
+    nx = dynamics.size_in(0)[0]
+    nu = dynamics.size_in(1)[0]
+    X0 = ca.MX.sym("X0", nx)
+    U0 = ca.MX.sym("U0", nu)
+    X_next = X0 + dt * dynamics(X0, U0)
+    return ca.Function("dyn_euler", [X0, U0], [X_next])
