@@ -633,7 +633,7 @@ class OCP:  # noqa: D101 TODO: add doc string
 
         return X_opt.T, U_opt.T, status
 
-    def calculate_trajectory_cost(
+    def calculate_trajectory_cost(  # noqa: C901, PLR0912, PLR0915
         self,
         X: ArrayLike,
         U: ArrayLike,
