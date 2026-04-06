@@ -1,7 +1,7 @@
 import casadi as ca
 import numpy as np
 
-from model_predictive_control.ocp import OCP, LinearOCP, terminal_tracking_objective, tracking_objective
+from model_predictive_control.ocp import OCP, LinearOCP, lqr_objective, terminal_lqr_objective
 
 
 def test_ocp_with_tracking_reference() -> None:
@@ -20,8 +20,8 @@ def test_ocp_with_tracking_reference() -> None:
     Q = np.eye(nx) * 10
     R = np.eye(nu) * 0.1
 
-    obj = tracking_objective(Q, R)
-    term_obj = terminal_tracking_objective(Q * 10, np.zeros((nx, 1)))
+    obj = lqr_objective(Q, R)
+    term_obj = terminal_lqr_objective(Q * 10)
 
     ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
 
@@ -88,7 +88,7 @@ def test_linearize_with_reference() -> None:
     Q = np.eye(nx)
     R = np.eye(nu)
 
-    obj = tracking_objective(Q, R)
+    obj = lqr_objective(Q, R)
 
     ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
 
@@ -100,12 +100,6 @@ def test_linearize_with_reference() -> None:
     # Linearize the tracking objective
     lin_ocp = ocp.linearize(x_bar, u_bar, dynamics_type="discrete", x_ref=X_ref, u_ref=U_ref)
 
-    # For (x - x_ref)^T Q (x - x_ref)
-    # The linear term q around x=0 is -2 * Q * x_ref.
-    # But wait, Q here is 1/2 of the hessian! So tracking_obj returns dx^T Q dx.
-    # The gradient wrt x at x=0 is 2 Q (x - x_ref) = -2 Q x_ref.
-    # So q_func returns -2 Q x_ref. But wait, we define tracking_obj as dx.T @ Q @ dx!
-    # Let's check the linear term q in the linearized OCP.
     expected_q = -2 * Q @ X_ref[0]
 
     assert np.allclose(lin_ocp.q[0], expected_q)

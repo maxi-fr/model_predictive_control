@@ -7,7 +7,7 @@ from numpy._typing import ArrayLike
 from model_predictive_control.ocp import OCP, LinearOCP
 
 
-class MPC:
+class MPC:  # noqa: D101  TODO: fix
     def __init__(
         self,
         ocp: OCP,
@@ -16,7 +16,7 @@ class MPC:
         U_guess: ArrayLike | None = None,
     ) -> None:
         """
-        Initializes the Model Predictive Control wrapper.
+        Initialize the Model Predictive Control wrapper.
 
         Args:
             ocp: The Optimal Control Problem to solve.
@@ -31,8 +31,7 @@ class MPC:
         self.ocp.setup(**setup_args)
 
         self.N = self.ocp.N
-        self.nx = self.ocp._nx
-        self.nu = self.ocp._nu
+        self.nx, self.nu = self.ocp.validate_dimensions()
 
         if X_guess is not None:
             self._X_guess = np.asarray(X_guess, dtype=float)
@@ -112,7 +111,9 @@ class MPC:
         self._U_guess = np.roll(U_opt, -1, axis=0)
         self._U_guess[-1, :] = self._U_guess[-2, :]
 
-        return U_opt[0]
+        u_opt_0: npt.NDArray[np.float64] = U_opt[0]
+
+        return u_opt_0
 
 
 class LinearMPC:  # noqa: D101  TODO: fix
@@ -215,4 +216,6 @@ class LinearMPC:  # noqa: D101  TODO: fix
         self._U_guess = np.roll(U_opt, -1, axis=0)
         self._U_guess[-1, :] = self._U_guess[-2, :]
 
-        return U_opt[0]
+        u_opt_0: npt.NDArray[np.float64] = U_opt[0]
+
+        return u_opt_0

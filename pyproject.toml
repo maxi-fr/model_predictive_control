@@ -61,7 +61,6 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-# Ensures imports are grouped logically
 known-first-party = ["model_predictive_control"]
 
 [tool.ruff.lint.pydocstyle]
@@ -76,6 +75,7 @@ convention = "numpy"
     "PLR2004", # Magic value used in comparison
     "D",       # Ignore docstrings in tests
 ]
+"examples/*" = ["N816", "T201"]
 
 [tool.ruff.format]
 quote-style = "double"
