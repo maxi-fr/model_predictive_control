@@ -4,7 +4,7 @@ import pytest
 
 from model_predictive_control.constraints import ConstraintList, ControlConstraint
 from model_predictive_control.mpc import MPC, LinearMPC
-from model_predictive_control.ocp import OCP, LinearOCP
+from model_predictive_control.ocp import OCP, LinearOCP, rk4_integrator
 
 
 def setup_simple_ocp() -> OCP:
@@ -43,7 +43,12 @@ def setup_simple_ocp() -> OCP:
 
 def test_mpc_initialization() -> None:
     ocp = setup_simple_ocp()
-    setup_args = {"method": "multiple_shooting", "dynamics_type": "continuous", "solver_opts": {"print_level": 0}}
+    setup_args = {
+        "method": "multiple_shooting",
+        "dynamics_type": "continuous",
+        "integrator": rk4_integrator,
+        "solver_opts": {"print_level": 0},
+    }
     mpc = MPC(ocp=ocp, setup_args=setup_args)
 
     assert mpc.N == 10
@@ -55,7 +60,12 @@ def test_mpc_initialization() -> None:
 
 def test_mpc_step_and_shifting() -> None:
     ocp = setup_simple_ocp()
-    setup_args = {"method": "multiple_shooting", "dynamics_type": "continuous", "solver_opts": {"print_level": 0}}
+    setup_args = {
+        "method": "multiple_shooting",
+        "dynamics_type": "continuous",
+        "integrator": rk4_integrator,
+        "solver_opts": {"print_level": 0},
+    }
     mpc = MPC(ocp=ocp, setup_args=setup_args)
 
     x0 = np.array([1.0, 0.0])
@@ -79,6 +89,7 @@ def test_mpc_solve_failure() -> None:
     setup_args = {
         "method": "multiple_shooting",
         "dynamics_type": "continuous",
+        "integrator": rk4_integrator,
         "solver_opts": {"max_iter": 0, "print_level": 0},
     }
     mpc = MPC(ocp=ocp, setup_args=setup_args)

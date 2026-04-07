@@ -1,3 +1,5 @@
+import warnings
+from collections.abc import Callable
 from typing import Any
 
 import casadi as ca
@@ -89,7 +91,7 @@ class OCP:  # noqa: D101 TODO: add doc string
         x_bar: ArrayLike,
         u_bar: ArrayLike,
         dynamics_type: str = "continuous",
-        integrator: str = "rk4",
+        integrator: Callable[[ca.Function, float], ca.Function] | None = None,
         x_ref: ArrayLike | None = None,
         u_ref: ArrayLike | None = None,
     ) -> "LinearOCP":
@@ -156,23 +158,15 @@ class OCP:  # noqa: D101 TODO: add doc string
             U_bar = u_bar
 
         if dynamics_type == "continuous":
-            if integrator == "rk4":
-                # Runge-Kutta 4 integration
-                X0 = ca.MX.sym("X0", nx)
-                U0 = ca.MX.sym("U0", nu)
-                k1 = self.dynamics(X0, U0)
-                k2 = self.dynamics(X0 + self.dt / 2.0 * k1, U0)
-                k3 = self.dynamics(X0 + self.dt / 2.0 * k2, U0)
-                k4 = self.dynamics(X0 + self.dt * k3, U0)
-                X_next = X0 + self.dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
-                dyn_func = ca.Function("dyn_rk4", [X0, U0], [X_next])
-            else:
-                # Forward Euler
-                X0 = ca.MX.sym("X0", nx)
-                U0 = ca.MX.sym("U0", nu)
-                X_next = X0 + self.dt * self.dynamics(X0, U0)
-                dyn_func = ca.Function("dyn_euler", [X0, U0], [X_next])
+            if integrator is None:
+                msg = "integrator must be provided when dynamics_type is 'continuous'"
+                raise ValueError(msg)
+            dyn_func = integrator(self.dynamics, self.dt)
         elif dynamics_type == "discrete":
+            if integrator is not None:
+                warnings.warn(
+                    "integrator argument is ignored when dynamics_type is 'discrete'", UserWarning, stacklevel=2
+                )
             dyn_func = self.dynamics
         else:
             msg = f"Unknown dynamics_type: {dynamics_type}"
@@ -410,7 +404,7 @@ class OCP:  # noqa: D101 TODO: add doc string
         self,
         method: str = "multiple_shooting",
         dynamics_type: str = "continuous",
-        integrator: str = "rk4",
+        integrator: Callable[[ca.Function, float], ca.Function] | None = None,
         solver: str = "ipopt",
         plugin_opts: dict[Any, Any] | None = None,
         solver_opts: dict[Any, Any] | None = None,
@@ -434,24 +428,21 @@ class OCP:  # noqa: D101 TODO: add doc string
         ):
             self._x_ref_param = self._opti.parameter(nx, self.N + 1)
 
-        if dynamics_type == "continuous":
-            if integrator == "rk4":
-                # Runge-Kutta 4 integration
-                X0 = ca.MX.sym("X0", nx)
-                U0 = ca.MX.sym("U0", nu)
-                k1 = self.dynamics(X0, U0)
-                k2 = self.dynamics(X0 + self.dt / 2.0 * k1, U0)
-                k3 = self.dynamics(X0 + self.dt / 2.0 * k2, U0)
-                k4 = self.dynamics(X0 + self.dt * k3, U0)
-                X_next = X0 + self.dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
-                dyn_func = ca.Function("dyn_rk4", [X0, U0], [X_next])
-            else:
-                # Forward Euler
-                X0 = ca.MX.sym("X0", nx)
-                U0 = ca.MX.sym("U0", nu)
-                X_next = X0 + self.dt * self.dynamics(X0, U0)
-                dyn_func = ca.Function("dyn_euler", [X0, U0], [X_next])
+        if method == "collocation":
+            if integrator is not None:
+                warnings.warn("integrator argument is ignored when method is 'collocation'", UserWarning, stacklevel=2)
+            # dyn_func is not used in collocation, but we set it to self.dynamics to avoid UnboundLocalError just in case
+            dyn_func = self.dynamics
+        elif dynamics_type == "continuous":
+            if integrator is None:
+                msg = "integrator must be provided when dynamics_type is 'continuous'"
+                raise ValueError(msg)
+            dyn_func = integrator(self.dynamics, self.dt)
         elif dynamics_type == "discrete":
+            if integrator is not None:
+                warnings.warn(
+                    "integrator argument is ignored when dynamics_type is 'discrete'", UserWarning, stacklevel=2
+                )
             dyn_func = self.dynamics
         else:
             msg = f"Unknown dynamics_type: {dynamics_type}"
@@ -1609,3 +1600,25 @@ class LinearOCP:  # noqa: D101
         total_cost += float(cost_N)
 
         return total_cost
+
+
+def rk4_integrator(dynamics: ca.Function, dt: float) -> ca.Function:  # noqa: D103
+    nx = dynamics.size_in(0)[0]
+    nu = dynamics.size_in(1)[0]
+    X0 = ca.MX.sym("X0", nx)
+    U0 = ca.MX.sym("U0", nu)
+    k1 = dynamics(X0, U0)
+    k2 = dynamics(X0 + dt / 2.0 * k1, U0)
+    k3 = dynamics(X0 + dt / 2.0 * k2, U0)
+    k4 = dynamics(X0 + dt * k3, U0)
+    X_next = X0 + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+    return ca.Function("dyn_rk4", [X0, U0], [X_next])
+
+
+def euler_integrator(dynamics: ca.Function, dt: float) -> ca.Function:  # noqa: D103
+    nx = dynamics.size_in(0)[0]
+    nu = dynamics.size_in(1)[0]
+    X0 = ca.MX.sym("X0", nx)
+    U0 = ca.MX.sym("U0", nu)
+    X_next = X0 + dt * dynamics(X0, U0)
+    return ca.Function("dyn_euler", [X0, U0], [X_next])
