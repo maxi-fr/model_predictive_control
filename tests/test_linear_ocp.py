@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from model_predictive_control.constraints import ConstraintList, LinearConstraint
 from model_predictive_control.ocp import LinearOCP
 
 
@@ -124,7 +125,9 @@ def test_linear_ocp_constraints() -> None:
     G = np.array([[0.0], [0.0], [1.0], [-1.0]])
     h = np.array([2.0, 2.0, 50.0, 50.0])
 
-    ocp = LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R, F=F, G=G, h=h)
+    cl = ConstraintList()
+    cl.add(LinearConstraint(F=F, G=G, h=h), range(5))
+    ocp = LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R, constraints=cl)
     ocp.setup(
         method="multiple_shooting",
         dynamics_type="discrete",
@@ -135,7 +138,7 @@ def test_linear_ocp_constraints() -> None:
     X, U, status = ocp.solve(np.array([1.5, 0.0]))
     assert status == "success"
 
-    ocp_ss = LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R, F=F, G=G, h=h)
+    ocp_ss = LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R, constraints=cl)
     ocp_ss.setup(
         method="single_shooting",
         dynamics_type="discrete",
