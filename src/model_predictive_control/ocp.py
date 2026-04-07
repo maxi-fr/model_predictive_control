@@ -38,9 +38,9 @@ class OCP:  # noqa: D101 TODO: add doc string
         self._X: ca.MX | None = None
         self._U: ca.MX | None = None
 
-        self._nx, self._nu = self._validate_dimensions()
+        self._nx, self._nu = self.validate_dimensions()
 
-    def _validate_dimensions(self) -> tuple[int, int]:  # noqa: PLR0912, C901
+    def validate_dimensions(self) -> tuple[int, int]:  # noqa: PLR0912, C901
         """Validate all casadi functions and returns nx and nu."""
         if self.dynamics.n_in() < 2:
             msg = "Dynamics function must take at least two arguments (state x and control u)."
@@ -630,6 +630,81 @@ class OCP:  # noqa: D101 TODO: add doc string
 
         return X_opt.T, U_opt.T, status
 
+    def calculate_trajectory_cost(  # noqa: C901, PLR0912, PLR0915
+        self,
+        X: ArrayLike,
+        U: ArrayLike,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
+    ) -> float:
+        """Calculate the total cost of a given state and control trajectory."""
+        X_arr = np.asarray(X, dtype=float)
+        U_arr = np.asarray(U, dtype=float)
+
+        if X_arr.shape != (self.N + 1, self._nx):
+            msg = f"X must have shape ({self.N + 1}, {self._nx})"
+            raise ValueError(msg)
+        if U_arr.shape != (self.N, self._nu):
+            msg = f"U must have shape ({self.N}, {self._nu})"
+            raise ValueError(msg)
+
+        X_ref_arr = None
+        U_ref_arr = None
+
+        if self.objective.n_in() == 4:
+            if x_ref is None:
+                X_ref_arr = np.zeros((self.N + 1, self._nx))
+            else:
+                X_ref_arr = np.asarray(x_ref, dtype=float)
+                if X_ref_arr.shape != (self.N + 1, self._nx):
+                    msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
+                    raise ValueError(msg)
+
+            if u_ref is None:
+                U_ref_arr = np.zeros((self.N, self._nu))
+            else:
+                U_ref_arr = np.asarray(u_ref, dtype=float)
+                if U_ref_arr.shape != (self.N, self._nu):
+                    msg = f"u_ref must have shape ({self.N}, {self._nu})"
+                    raise ValueError(msg)
+        elif (
+            hasattr(self, "terminal_objective")
+            and self.terminal_objective is not None
+            and self.terminal_objective.n_in() == 2
+        ):
+            if x_ref is None:
+                X_ref_arr = np.zeros((self.N + 1, self._nx))
+            else:
+                X_ref_arr = np.asarray(x_ref, dtype=float)
+                if X_ref_arr.shape != (self.N + 1, self._nx):
+                    msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
+                    raise ValueError(msg)
+
+        total_cost = 0.0
+
+        for k in range(self.N):
+            x_k = X_arr[k, :]
+            u_k = U_arr[k, :]
+
+            if self.objective.n_in() == 4:
+                assert X_ref_arr is not None
+                assert U_ref_arr is not None
+                cost_k = self.objective(x_k, u_k, X_ref_arr[k, :], U_ref_arr[k, :])
+            else:
+                cost_k = self.objective(x_k, u_k)
+            total_cost += float(cost_k)
+
+        x_N = X_arr[self.N, :]
+        if self.terminal_objective is not None:
+            if self.terminal_objective.n_in() == 2:
+                assert X_ref_arr is not None
+                cost_N = self.terminal_objective(x_N, X_ref_arr[self.N, :])
+            else:
+                cost_N = self.terminal_objective(x_N)
+            total_cost += float(cost_N)
+
+        return total_cost
+
 
 def quadratic_objective(  # noqa: D103, TODO: fix D103
     Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
@@ -667,8 +742,8 @@ def quadratic_objective(  # noqa: D103, TODO: fix D103
     )
 
 
-def tracking_objective(  # noqa: D103, TODO: fix D103
-    Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
+def lqr_objective(  # noqa: D103, TODO: fix D103
+    Q: np.ndarray, R: np.ndarray, N: np.ndarray | None = None
 ) -> Function:
     nx = Q.shape[0]
     nu = R.shape[0]
@@ -677,10 +752,6 @@ def tracking_objective(  # noqa: D103, TODO: fix D103
     x_ref = ca.MX.sym("x_ref", nx)
     u_ref = ca.MX.sym("u_ref", nu)
 
-    if q is None:
-        q = np.zeros((nx, 1))
-    if r is None:
-        r = np.zeros((nu, 1))
     if N is None:
         N = np.zeros((nx, nu))
 
@@ -690,12 +761,6 @@ def tracking_objective(  # noqa: D103, TODO: fix D103
     if R.shape[0] != R.shape[1] or R.shape[0] != nu:
         msg = "Matrix R must be square and match control dimension."
         raise ValueError(msg)
-    if q.shape[0] != nx:
-        msg = "Vector q must match state dimension."
-        raise ValueError(msg)
-    if r.shape[0] != nu:
-        msg = "Vector r must match control dimension."
-        raise ValueError(msg)
     if N.shape[0] != nx or N.shape[1] != nu:
         msg = "Matrix N must match state and control dimensions."
         raise ValueError(msg)
@@ -704,9 +769,9 @@ def tracking_objective(  # noqa: D103, TODO: fix D103
     du = u - u_ref
 
     return ca.Function(
-        "tracking_obj",
+        "lqr_obj",
         [x, u, x_ref, u_ref],
-        [dx.T @ Q @ dx + dx.T @ q + du.T @ R @ du + du.T @ r + dx.T @ N @ du],
+        [dx.T @ Q @ dx + du.T @ R @ du + dx.T @ N @ du],
         ["x", "u", "x_ref", "u_ref"],
         ["f"],
     )
@@ -782,14 +847,11 @@ def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:  # n
     return ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
 
 
-def terminal_tracking_objective(Q: np.ndarray, q: np.ndarray) -> Function:  # noqa: D103   TODO: fix
+def terminal_lqr_objective(Q: np.ndarray) -> Function:  # noqa: D103   TODO: fix
     nx = Q.shape[0]
 
     if Q.shape[1] != nx:
         msg = "Matrix Q must be square."
-        raise ValueError(msg)
-    if q.shape[0] != nx:
-        msg = "Vector q must have the same length as Q."
         raise ValueError(msg)
 
     x = ca.MX.sym("x", nx)
@@ -797,7 +859,7 @@ def terminal_tracking_objective(Q: np.ndarray, q: np.ndarray) -> Function:  # no
 
     dx = x - x_ref
 
-    return ca.Function("term_tracking_obj", [x, x_ref], [dx.T @ Q @ dx + dx.T @ q], ["x", "x_ref"], ["f"])
+    return ca.Function("term_lqr_obj", [x, x_ref], [dx.T @ Q @ dx], ["x", "x_ref"], ["f"])
 
 
 def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
@@ -878,7 +940,7 @@ class LinearOCP:  # noqa: D101
         self.F_term = None if F_term is None else np.asarray(F_term, dtype=float)
         self.h_term = None if h_term is None else np.asarray(h_term, dtype=float)
 
-        self._validate_dimensions()
+        self.validate_dimensions()
 
         self._method: str = ""
         self._solver_obj: ca.Function | None = None
@@ -890,7 +952,8 @@ class LinearOCP:  # noqa: D101
     def _is_time_varying(self, arr: np.ndarray, expected_dims: int) -> bool:
         return bool(arr.ndim == expected_dims + 1 and arr.shape[0] == self.N)
 
-    def _validate_dimensions(self) -> None:  # noqa: C901
+    def validate_dimensions(self) -> None:  # noqa: C901
+        """Validate all casadi functions and returns nx and nu."""
         nx = self.nx
         nu = self.nu
         N = self.N
@@ -1392,6 +1455,67 @@ class LinearOCP:  # noqa: D101
             raise ValueError(msg)
 
         return X_opt, U_opt, status
+
+    def calculate_trajectory_cost(
+        self,
+        X: ArrayLike,
+        U: ArrayLike,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
+    ) -> float:
+        """Calculate the total numerical cost of a given state and control trajectory."""
+        X_arr = np.asarray(X, dtype=float)
+        U_arr = np.asarray(U, dtype=float)
+
+        if X_arr.shape != (self.N + 1, self.nx):
+            msg = f"X must have shape ({self.N + 1}, {self.nx})"
+            raise ValueError(msg)
+        if U_arr.shape != (self.N, self.nu):
+            msg = f"U must have shape ({self.N}, {self.nu})"
+            raise ValueError(msg)
+
+        X_ref_arr = None
+        if x_ref is not None:
+            X_ref_arr = np.asarray(x_ref, dtype=float)
+            if X_ref_arr.ndim == 1 and X_ref_arr.shape[0] == self.nx:
+                X_ref_arr = np.tile(X_ref_arr, (self.N + 1, 1))
+            if X_ref_arr.shape != (self.N + 1, self.nx):
+                msg = f"x_ref must have shape ({self.N + 1}, {self.nx}) or ({self.nx},)"
+                raise ValueError(msg)
+
+        U_ref_arr = None
+        if u_ref is not None:
+            U_ref_arr = np.asarray(u_ref, dtype=float)
+            if U_ref_arr.ndim == 1 and U_ref_arr.shape[0] == self.nu:
+                U_ref_arr = np.tile(U_ref_arr, (self.N, 1))
+            if U_ref_arr.shape != (self.N, self.nu):
+                msg = f"u_ref must have shape ({self.N}, {self.nu}) or ({self.nu},)"
+                raise ValueError(msg)
+
+        total_cost = 0.0
+
+        for k in range(self.N):
+            Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
+            Rk = self.R[k] if self.R.ndim == 3 else self.R
+            N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+            qk = self.q[k] if self.q.ndim == 2 else self.q
+            rk = self.r[k] if self.r.ndim == 2 else self.r
+
+            x_k = X_arr[k]
+            u_k = U_arr[k]
+
+            dx = x_k if X_ref_arr is None else x_k - X_ref_arr[k]
+            du = u_k if U_ref_arr is None else u_k - U_ref_arr[k]
+
+            cost_k = 0.5 * (dx.T @ Qk @ dx + du.T @ Rk @ du) + dx.T @ N_cross_k @ du + qk.T @ dx + rk.T @ du
+            total_cost += float(cost_k)
+
+        x_N = X_arr[self.N]
+        dx_N = x_N if X_ref_arr is None else x_N - X_ref_arr[self.N]
+        cost_N = 0.5 * (dx_N.T @ self.Qf @ dx_N) + self.qf.T @ dx_N
+        total_cost += float(cost_N)
+
+        return total_cost
 
 
 def rk4_integrator(dynamics: ca.Function, dt: float) -> ca.Function:  # noqa: D103

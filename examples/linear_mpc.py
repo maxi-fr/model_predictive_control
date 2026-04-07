@@ -136,6 +136,8 @@ for k in range(N_sim):
 
     # Store predictions for plotting
     X_opt, U_opt = mpc.get_last_open_loop_predictions()
+    assert X_opt is not None
+    assert U_opt is not None
     X_open_loop[k, :, :] = X_opt
 
     # Apply control to system

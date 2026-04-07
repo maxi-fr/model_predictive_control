@@ -27,9 +27,9 @@ import numpy as np
 from model_predictive_control.ocp import (
     OCP,
     control_bounds_constraints,
+    lqr_objective,
     state_bounds_constraints,
-    terminal_tracking_objective,
-    tracking_objective,
+    terminal_lqr_objective,
 )
 from model_predictive_control.plots import plot_controls, plot_states
 
@@ -191,11 +191,11 @@ Q = np.diag(Q_diag)
 # Control weights (penalize deviation from hover thrust)
 R = np.diag([1.0, 1.0, 1.0, 1.0])
 
-objective = tracking_objective(Q, R)
+objective = lqr_objective(Q, R)
 
 # Terminal state weights
 Qf = Q * 5.0
-terminal_objective = terminal_tracking_objective(Qf, np.zeros(nx))
+terminal_objective = terminal_lqr_objective(Qf)
 
 # Constraints
 # Control inputs limits
