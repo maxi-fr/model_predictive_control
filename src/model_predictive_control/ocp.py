@@ -1,3 +1,5 @@
+import warnings
+from collections.abc import Callable
 from typing import Any
 
 import casadi as ca
@@ -190,7 +192,9 @@ class OCP:  # noqa: D101 TODO: add doc string
             if integrator is None:
                 pass
             elif integrator is not None:
-                warnings.warn("integrator argument is ignored when dynamics_type is 'discrete'", UserWarning, stacklevel=2)
+                warnings.warn(
+                    "integrator argument is ignored when dynamics_type is 'discrete'", UserWarning, stacklevel=2
+                )
             dyn_func = self.dynamics
         else:
             msg = f"Unknown dynamics_type: {dynamics_type}"
@@ -400,7 +404,9 @@ class OCP:  # noqa: D101 TODO: add doc string
             if integrator is None:
                 pass
             elif integrator is not None:
-                warnings.warn("integrator argument is ignored when dynamics_type is 'discrete'", UserWarning, stacklevel=2)
+                warnings.warn(
+                    "integrator argument is ignored when dynamics_type is 'discrete'", UserWarning, stacklevel=2
+                )
             dyn_func = self.dynamics
         else:
             msg = f"Unknown dynamics_type: {dynamics_type}"
