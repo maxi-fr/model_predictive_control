@@ -633,6 +633,81 @@ class OCP:  # noqa: D101 TODO: add doc string
 
         return X_opt.T, U_opt.T, status
 
+    def calculate_trajectory_cost(  # noqa: C901, PLR0912, PLR0915
+        self,
+        X: ArrayLike,
+        U: ArrayLike,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
+    ) -> float:
+        """Calculate the total cost of a given state and control trajectory."""
+        X_arr = np.asarray(X, dtype=float)
+        U_arr = np.asarray(U, dtype=float)
+
+        if X_arr.shape != (self.N + 1, self._nx):
+            msg = f"X must have shape ({self.N + 1}, {self._nx})"
+            raise ValueError(msg)
+        if U_arr.shape != (self.N, self._nu):
+            msg = f"U must have shape ({self.N}, {self._nu})"
+            raise ValueError(msg)
+
+        X_ref_arr = None
+        U_ref_arr = None
+
+        if self.objective.n_in() == 4:
+            if x_ref is None:
+                X_ref_arr = np.zeros((self.N + 1, self._nx))
+            else:
+                X_ref_arr = np.asarray(x_ref, dtype=float)
+                if X_ref_arr.shape != (self.N + 1, self._nx):
+                    msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
+                    raise ValueError(msg)
+
+            if u_ref is None:
+                U_ref_arr = np.zeros((self.N, self._nu))
+            else:
+                U_ref_arr = np.asarray(u_ref, dtype=float)
+                if U_ref_arr.shape != (self.N, self._nu):
+                    msg = f"u_ref must have shape ({self.N}, {self._nu})"
+                    raise ValueError(msg)
+        elif (
+            hasattr(self, "terminal_objective")
+            and self.terminal_objective is not None
+            and self.terminal_objective.n_in() == 2
+        ):
+            if x_ref is None:
+                X_ref_arr = np.zeros((self.N + 1, self._nx))
+            else:
+                X_ref_arr = np.asarray(x_ref, dtype=float)
+                if X_ref_arr.shape != (self.N + 1, self._nx):
+                    msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
+                    raise ValueError(msg)
+
+        total_cost = 0.0
+
+        for k in range(self.N):
+            x_k = X_arr[k, :]
+            u_k = U_arr[k, :]
+
+            if self.objective.n_in() == 4:
+                assert X_ref_arr is not None
+                assert U_ref_arr is not None
+                cost_k = self.objective(x_k, u_k, X_ref_arr[k, :], U_ref_arr[k, :])
+            else:
+                cost_k = self.objective(x_k, u_k)
+            total_cost += float(cost_k)
+
+        x_N = X_arr[self.N, :]
+        if self.terminal_objective is not None:
+            if self.terminal_objective.n_in() == 2:
+                assert X_ref_arr is not None
+                cost_N = self.terminal_objective(x_N, X_ref_arr[self.N, :])
+            else:
+                cost_N = self.terminal_objective(x_N)
+            total_cost += float(cost_N)
+
+        return total_cost
+
 
 def quadratic_objective(  # noqa: D103, TODO: fix D103
     Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
@@ -1383,3 +1458,64 @@ class LinearOCP:  # noqa: D101
             raise ValueError(msg)
 
         return X_opt, U_opt, status
+
+    def calculate_trajectory_cost(
+        self,
+        X: ArrayLike,
+        U: ArrayLike,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
+    ) -> float:
+        """Calculate the total numerical cost of a given state and control trajectory."""
+        X_arr = np.asarray(X, dtype=float)
+        U_arr = np.asarray(U, dtype=float)
+
+        if X_arr.shape != (self.N + 1, self.nx):
+            msg = f"X must have shape ({self.N + 1}, {self.nx})"
+            raise ValueError(msg)
+        if U_arr.shape != (self.N, self.nu):
+            msg = f"U must have shape ({self.N}, {self.nu})"
+            raise ValueError(msg)
+
+        X_ref_arr = None
+        if x_ref is not None:
+            X_ref_arr = np.asarray(x_ref, dtype=float)
+            if X_ref_arr.ndim == 1 and X_ref_arr.shape[0] == self.nx:
+                X_ref_arr = np.tile(X_ref_arr, (self.N + 1, 1))
+            if X_ref_arr.shape != (self.N + 1, self.nx):
+                msg = f"x_ref must have shape ({self.N + 1}, {self.nx}) or ({self.nx},)"
+                raise ValueError(msg)
+
+        U_ref_arr = None
+        if u_ref is not None:
+            U_ref_arr = np.asarray(u_ref, dtype=float)
+            if U_ref_arr.ndim == 1 and U_ref_arr.shape[0] == self.nu:
+                U_ref_arr = np.tile(U_ref_arr, (self.N, 1))
+            if U_ref_arr.shape != (self.N, self.nu):
+                msg = f"u_ref must have shape ({self.N}, {self.nu}) or ({self.nu},)"
+                raise ValueError(msg)
+
+        total_cost = 0.0
+
+        for k in range(self.N):
+            Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
+            Rk = self.R[k] if self.R.ndim == 3 else self.R
+            N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+            qk = self.q[k] if self.q.ndim == 2 else self.q
+            rk = self.r[k] if self.r.ndim == 2 else self.r
+
+            x_k = X_arr[k]
+            u_k = U_arr[k]
+
+            dx = x_k if X_ref_arr is None else x_k - X_ref_arr[k]
+            du = u_k if U_ref_arr is None else u_k - U_ref_arr[k]
+
+            cost_k = 0.5 * (dx.T @ Qk @ dx + du.T @ Rk @ du) + dx.T @ N_cross_k @ du + qk.T @ dx + rk.T @ du
+            total_cost += float(cost_k)
+
+        x_N = X_arr[self.N]
+        dx_N = x_N if X_ref_arr is None else x_N - X_ref_arr[self.N]
+        cost_N = 0.5 * (dx_N.T @ self.Qf @ dx_N) + self.qf.T @ dx_N
+        total_cost += float(cost_N)
+
+        return total_cost

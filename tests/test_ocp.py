@@ -335,3 +335,83 @@ def test_riccati_equivalence() -> None:
 
     np.testing.assert_allclose(X_lin, X_ric, atol=1e-10)
     np.testing.assert_allclose(U_lin, U_ric, atol=1e-10)
+
+
+def test_ocp_calculate_trajectory_cost() -> None:
+    nx = 2
+    nu = 1
+    N = 5
+    dt = 0.1
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+    dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[0] + u, x[1])])
+    obj = ca.Function("obj", [x, u], [x[0] ** 2 + u[0] ** 2])
+    term_obj = ca.Function("term", [x], [2 * x[0] ** 2])
+
+    ocp = OCP(N=N, dt=dt, dynamics=dyn, objective=obj, terminal_objective=term_obj)
+
+    X_test = np.ones((N + 1, nx))
+    U_test = np.ones((N, nu)) * 2
+
+    # expected stage cost: 1^2 + 2^2 = 5
+    # total stage cost: 5 * 5 = 25
+    # terminal cost: 2 * 1^2 = 2
+    # total expected = 27
+    cost = ocp.calculate_trajectory_cost(X_test, U_test)
+    assert np.isclose(cost, 27.0)
+
+    # Test error cases
+    with pytest.raises(ValueError, match="X must have shape"):
+        ocp.calculate_trajectory_cost(np.ones((N, nx)), U_test)
+    with pytest.raises(ValueError, match="U must have shape"):
+        ocp.calculate_trajectory_cost(X_test, np.ones((N + 1, nu)))
+
+
+def test_linear_ocp_calculate_trajectory_cost() -> None:
+    nx = 2
+    nu = 1
+    N = 5
+    dt = 0.1
+
+    x = ca.MX.sym("x", nx)
+    u = ca.MX.sym("u", nu)
+    A = np.eye(2)
+    B = np.array([[1.0], [0.0]])
+    dyn = ca.Function("dyn", [x, u], [A @ x + B @ u])
+
+    # Obj is 0.5 * (x^T Q x + u^T R u) for linear OCP setup -> x^T x + u^T u
+    # so we define nonlinear cost identically for equivalence
+    obj = ca.Function("obj", [x, u], [x.T @ x + u.T @ u])
+
+    term_obj = ca.Function("term_obj", [x], [2 * (x.T @ x)])
+
+    ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
+    lin_ocp = ocp.linearize(np.zeros(2), np.zeros(1), dynamics_type="discrete")
+
+    X_test = np.ones((N + 1, nx))
+    U_test = np.ones((N, nu)) * 2
+
+    # Same calculation:
+    # 0.5*(dx^T Q dx + du^T R du)
+    # Q = [[2,0],[0,2]], R=[[2]] -> stage cost = 1*(1^2+1^2) + 1*(2^2) = 2 + 4 = 6
+    # N=5 stages -> 30
+    # term: 0.5*(x^T Qf x) -> Qf is Hessian of 2*(x1^2+x2^2) -> 4*I
+    # term cost = 0.5 * x^T (4I) x = 2 * (1^2 + 1^2) = 4
+    # Total = 34
+
+    cost = lin_ocp.calculate_trajectory_cost(X_test, U_test)
+    assert np.isclose(cost, 34.0)
+
+    # Test tracking references
+    x_ref = np.ones((N + 1, nx)) * 0.5
+    u_ref = np.ones((N, nu))
+
+    # stage cost with ref:
+    # dx = [0.5, 0.5], du = [1]
+    # 1*(0.5^2+0.5^2) + 1*(1^2) = 0.5 + 1 = 1.5
+    # total stage = 5 * 1.5 = 7.5
+    # term: 2*(0.5^2+0.5^2) = 1.0
+    # Total = 8.5
+    cost_with_ref = lin_ocp.calculate_trajectory_cost(X_test, U_test, x_ref=x_ref, u_ref=u_ref)
+    assert np.isclose(cost_with_ref, 8.5)
