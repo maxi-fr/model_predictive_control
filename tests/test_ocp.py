@@ -4,12 +4,17 @@ import casadi as ca
 import numpy as np
 import pytest
 
+from model_predictive_control.constraints import (
+    Constraint,
+    ConstraintList,
+    ControlConstraint,
+    LinearConstraint,
+    StateConstraint,
+)
 from model_predictive_control.ocp import OCP, rk4_integrator
 
 
-def setup_simple_ocp(
-    dynamics: ca.Function | None = None, objective: ca.Function | None = None, **kwargs: dict[str, Any]
-) -> OCP:
+def setup_simple_ocp(dynamics: ca.Function | None = None, objective: ca.Function | None = None, **kwargs: Any) -> OCP:  # noqa: ANN401
     # Simple double integrator system
     # x = [p, v], u = [a]
     nx = 2
@@ -28,9 +33,11 @@ def setup_simple_ocp(
         obj = x[0] ** 2 + x[1] ** 2 + u[0] ** 2
         objective = ca.Function("obj", [x, u], [obj])
 
-    if "in_eq_constraints" not in kwargs:
+    if "constraints" not in kwargs:
         ineq = u[0] ** 2 - 1.0
-        kwargs["in_eq_constraints"] = ca.Function("ineq", [x, u], [ineq])
+        cl = ConstraintList()
+        cl.add(Constraint(ca.Function("ineq", [x, u], [ineq])), range(N))
+        kwargs["constraints"] = cl
 
     if "terminal_objective" not in kwargs:
         term_obj = 10 * (x[0] ** 2 + x[1] ** 2)
@@ -70,22 +77,29 @@ def test_ocp_validation_wrong_dims() -> None:
 
     # Break eq_constraints input size
     eq_wrong = ca.Function("eq", [x_wrong, u], [x_wrong[0]])
-    with pytest.raises(ValueError, match="eq_constraints function inputs must match"):
-        setup_simple_ocp(eq_constraints=eq_wrong)
+    cl = ConstraintList()
+    cl.add(Constraint(eq_wrong, is_equality=True), range(10))
+    with pytest.raises(ValueError, match="Constraint function inputs must match state"):
+        setup_simple_ocp(constraints=cl)
 
     # Break in_eq_constraints input size
-    ineq_wrong = ca.Function("ineq", [x_wrong, u_wrong], [u_wrong[0]])
-    with pytest.raises(ValueError, match="in_eq_constraints function inputs must match"):
-        setup_simple_ocp(in_eq_constraints=ineq_wrong)
+    ineq_wrong = ca.Function("ineq", [ca.MX.sym("x", 3), u], [u[0]])
+    cl = ConstraintList()
+    cl.add(Constraint(ineq_wrong, is_equality=False), range(10))
+    with pytest.raises(ValueError, match="Constraint function inputs must match state"):
+        setup_simple_ocp(constraints=cl)
 
-    # Break terminal conditions
-    term_obj_wrong = ca.Function("term_obj", [x_wrong], [x_wrong[0] ** 2])
+    # Break terminal objective
+    term_obj_wrong = ca.Function("term_obj_wrong", [x_wrong], [x_wrong[0]])
     with pytest.raises(ValueError, match="terminal_objective function input must match"):
         setup_simple_ocp(terminal_objective=term_obj_wrong)
 
-    term_eq_wrong = ca.Function("term_eq", [x_wrong], [x_wrong[0]])
-    with pytest.raises(ValueError, match="terminal_eq_constraints function input must match"):
-        setup_simple_ocp(terminal_eq_constraints=term_eq_wrong)
+    # Break terminal eq_constraints
+    term_eq_wrong = ca.Function("term_eq_wrong", [x_wrong], [x_wrong[0]])
+    cl = ConstraintList()
+    cl.add(StateConstraint(term_eq_wrong, is_equality=True), [10])
+    with pytest.raises(ValueError, match="StateConstraint function input must match state"):
+        setup_simple_ocp(constraints=cl)
 
 
 @pytest.mark.parametrize(
@@ -188,7 +202,9 @@ def test_linearize_method() -> None:
     # Constraints: u <= 1 -> u - 1 <= 0
     in_eq = ca.Function("in_eq", [x, u], [u - 1], ["x", "u"], ["f"])
 
-    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn, in_eq_constraints=in_eq)
+    cl = ConstraintList()
+    cl.add(Constraint(in_eq), range(N))
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn, constraints=cl)
 
     x_bar = np.array([0.0, 0.0])
     u_bar = np.array([0.0])
@@ -213,6 +229,20 @@ def test_linearize_method() -> None:
     np.testing.assert_allclose(lin_ocp.Q[0], Q_expected, atol=1e-10)
     np.testing.assert_allclose(lin_ocp.R[0], R_expected, atol=1e-10)
     np.testing.assert_allclose(lin_ocp.N_cross[0], N_cross_expected, atol=1e-10)
+
+    lin_c = lin_ocp.constraints.constraints[0][0]
+    assert isinstance(lin_c, LinearConstraint)
+    assert lin_c.G is not None
+    assert lin_c.h is not None
+    np.testing.assert_allclose(lin_c.G[0], np.array([[1.0]]), atol=1e-10)
+    np.testing.assert_allclose(lin_c.h[0], np.array([1.0]), atol=1e-10)
+
+    lin_c = lin_ocp.constraints.constraints[0][0]
+    assert isinstance(lin_c, LinearConstraint)
+    assert lin_c.G is not None
+    assert lin_c.h is not None
+    np.testing.assert_allclose(lin_c.G[0], np.array([[1.0]]), atol=1e-10)
+    np.testing.assert_allclose(lin_c.h[0], np.array([1.0]), atol=1e-10)
 
 
 def test_linearize_equivalence() -> None:

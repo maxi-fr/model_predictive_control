@@ -2,6 +2,7 @@ import casadi as ca
 import numpy as np
 import pytest
 
+from model_predictive_control.constraints import ConstraintList, ControlConstraint
 from model_predictive_control.mpc import MPC, LinearMPC
 from model_predictive_control.ocp import OCP, LinearOCP, rk4_integrator
 
@@ -23,7 +24,9 @@ def setup_simple_ocp() -> OCP:
     objective = ca.Function("obj", [x, u], [obj])
 
     ineq = u[0] ** 2 - 1.0
-    in_eq_constraints = ca.Function("ineq", [x, u], [ineq])
+    in_eq_constraints = ca.Function("ineq", [u], [ineq])
+    cl = ConstraintList()
+    cl.add(ControlConstraint(in_eq_constraints), range(N))
 
     term_obj = 10 * (x[0] ** 2 + x[1] ** 2)
     terminal_objective = ca.Function("term_obj", [x], [term_obj])
@@ -33,7 +36,7 @@ def setup_simple_ocp() -> OCP:
         dt=dt,
         objective=objective,
         dynamics=dynamics,
-        in_eq_constraints=in_eq_constraints,
+        constraints=cl,
         terminal_objective=terminal_objective,
     )
 

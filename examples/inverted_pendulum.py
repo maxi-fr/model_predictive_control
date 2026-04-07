@@ -25,6 +25,7 @@ import casadi as ca
 import matplotlib.pyplot as plt
 import numpy as np
 
+from model_predictive_control.constraints import ConstraintList, Constraint, StateConstraint, ControlConstraint
 from model_predictive_control.ocp import (
     OCP,
     control_bounds_constraints,
@@ -131,6 +132,8 @@ control_bounds = control_bounds_constraints(u_min, u_max, nx)
 
 # Combine constraints: inequality constraints must return values <= 0
 in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
+cl = ConstraintList()
+cl.add(Constraint(in_eq_constraints), slice(None))
 
 
 # %% [markdown]
@@ -154,7 +157,7 @@ ocp = OCP(
     objective=objective,
     dynamics=dynamics,
     terminal_objective=terminal_objective,
-    in_eq_constraints=in_eq_constraints,
+    constraints=cl,
 )
 
 # Setup the problem formulation and solver

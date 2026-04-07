@@ -74,6 +74,8 @@ convention = "numpy"
     "ARG001",  # Unused function args (fixtures)
     "PLR2004", # Magic value used in comparison
     "D",       # Ignore docstrings in tests
+    "SLF001",  # Private member accessed
+    "PT011",   # pytest.raises too broad
 ]
 "examples/*" = ["N816", "T201"]
 

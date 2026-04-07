@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from model_predictive_control.mpc import LinearMPC
+from model_predictive_control.constraints import ConstraintList, Constraint, StateConstraint, ControlConstraint
 from model_predictive_control.ocp import LinearOCP
 from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
 
@@ -91,7 +92,10 @@ u_max = np.array([u_max_val])
 N_horizon = 20
 N_sim = 40
 dt = 0.1
-
+from model_predictive_control.constraints import ConstraintList, LinearConstraint
+cl = ConstraintList()
+cl.add(LinearConstraint(F=F, G=G, h=h), range(N_horizon))
+cl.add(LinearConstraint(F=F_term, h=h_term), [N_horizon])
 ocp = LinearOCP(
     N=N_horizon,
     dt=dt,
@@ -99,16 +103,7 @@ ocp = LinearOCP(
     B=B,
     Q=Q,
     R=R,
-    q=q,
-    r=r,
-    N_cross=N_cross,
-    Qf=Qf,
-    qf=q,
-    F=F,
-    G=G,
-    h=h,
-    F_term=F_term,
-    h_term=h_term,
+    constraints=cl,
 )
 
 # Setup using LinearMPC wrapper with multiple shooting (sparse) and qrqp backend
