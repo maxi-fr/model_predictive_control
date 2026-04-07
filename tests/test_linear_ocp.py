@@ -11,7 +11,7 @@ def test_linear_ocp_validation() -> None:
     Q = np.eye(2)
     R = np.eye(1)
 
-    with pytest.raises(ValueError):  # noqa: PT011
+    with pytest.raises(ValueError):
         LinearOCP(N=10, dt=0.1, A=np.eye(3), B=B, Q=Q, R=R)
 
     ocp = LinearOCP(N=10, dt=0.1, A=A, B=B, Q=Q, R=R)
@@ -45,9 +45,9 @@ def test_linear_ocp_solve_multiple_shooting() -> None:
     np.testing.assert_allclose(U, U_warm, atol=1e-5)
 
     # Test bad warm start shapes
-    with pytest.raises(ValueError):  # noqa: PT011
+    with pytest.raises(ValueError):
         ocp.solve(np.array([1.0, 0.0]), X_guess=np.zeros((6, 3)))
-    with pytest.raises(ValueError):  # noqa: PT011
+    with pytest.raises(ValueError):
         ocp.solve(np.array([1.0, 0.0]), U_guess=np.zeros((4, 1)))
 
 

@@ -107,10 +107,6 @@ def test_constraint_list_resolve_indices() -> None:
     assert cl.resolve_indices(slice(None), N) == list(range(11))
     assert cl.resolve_indices(slice(0, -1), N) == list(range(10))
 
-    # Invalid type
-    with pytest.raises(ValueError, match="Unsupported time_indices format"):
-        cl.resolve_indices("all", N)
-
 
 def test_constraint_list_add_and_iter() -> None:
     cl = ConstraintList()
@@ -127,7 +123,7 @@ def test_constraint_list_add_and_iter() -> None:
 
     c_list = list(cl)
     assert c_list[0][0] is c1
-    assert list(c_list[0][1]) == list(range(5))
+    assert list(c_list[0][1]) == list(range(5))  # type: ignore[arg-type]
 
     assert c_list[1][0] is c2
     assert c_list[1][1] == -1

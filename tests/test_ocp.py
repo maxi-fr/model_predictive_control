@@ -14,7 +14,7 @@ from model_predictive_control.constraints import (
 from model_predictive_control.ocp import OCP
 
 
-def setup_simple_ocp(dynamics: ca.Function | None = None, objective: ca.Function | None = None, **kwargs: Any) -> OCP:
+def setup_simple_ocp(dynamics: ca.Function | None = None, objective: ca.Function | None = None, **kwargs: Any) -> OCP:  # noqa: ANN401
     # Simple double integrator system
     # x = [p, v], u = [a]
     nx = 2
@@ -77,16 +77,16 @@ def test_ocp_validation_wrong_dims() -> None:
 
     # Break eq_constraints input size
     eq_wrong = ca.Function("eq", [x_wrong, u], [x_wrong[0]])
+    cl = ConstraintList()
+    cl.add(Constraint(eq_wrong, is_equality=True), range(10))
     with pytest.raises(ValueError, match="Constraint function inputs must match state"):
-        cl = ConstraintList()
-        cl.add(Constraint(eq_wrong, is_equality=True), range(10))
         setup_simple_ocp(constraints=cl)
 
     # Break in_eq_constraints input size
     ineq_wrong = ca.Function("ineq", [ca.MX.sym("x", 3), u], [u[0]])
+    cl = ConstraintList()
+    cl.add(Constraint(ineq_wrong, is_equality=False), range(10))
     with pytest.raises(ValueError, match="Constraint function inputs must match state"):
-        cl = ConstraintList()
-        cl.add(Constraint(ineq_wrong, is_equality=False), range(10))
         setup_simple_ocp(constraints=cl)
 
     # Break terminal objective
@@ -96,9 +96,9 @@ def test_ocp_validation_wrong_dims() -> None:
 
     # Break terminal eq_constraints
     term_eq_wrong = ca.Function("term_eq_wrong", [x_wrong], [x_wrong[0]])
+    cl = ConstraintList()
+    cl.add(StateConstraint(term_eq_wrong, is_equality=True), [10])
     with pytest.raises(ValueError, match="StateConstraint function input must match state"):
-        cl = ConstraintList()
-        cl.add(StateConstraint(term_eq_wrong, is_equality=True), [10])
         setup_simple_ocp(constraints=cl)
 
 
