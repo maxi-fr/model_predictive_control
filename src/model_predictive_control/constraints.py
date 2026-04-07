@@ -103,7 +103,7 @@ class ConstraintList:
             return [idx]
         if isinstance(time_indices, slice):
             return list(range(*time_indices.indices(N + 1)))
-        if isinstance(time_indices, Iterable):
+        if isinstance(time_indices, Iterable) and not isinstance(time_indices, str):
             return [i if i >= 0 else N + 1 + i for i in time_indices]
         raise ValueError(f"Unsupported time_indices format: {type(time_indices)}")
 
