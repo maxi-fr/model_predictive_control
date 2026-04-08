@@ -305,15 +305,17 @@ class ControlNormConstraint(ControlConstraint):
         super().__init__(f=f_func, is_equality=False)
 
 
-class LinearConstraint(BaseConstraint):
+class LinearConstraint(Constraint):
     """Constraint wrapping F*x + G*u <= h or == h."""
 
-    def __init__(
+    def __init__(  # noqa: C901, PLR0913
         self,
         h: ArrayLike,
         F: ArrayLike | None = None,
         G: ArrayLike | None = None,
         is_equality: bool = False,
+        nx: int | None = None,
+        nu: int | None = None,
     ) -> None:
         """
         Initialize the linear constraint.
@@ -324,15 +326,57 @@ class LinearConstraint(BaseConstraint):
             F: State coefficient matrix.
             G: Control coefficient matrix.
             is_equality: Whether the constraint is an equality constraint (== h) or inequality (<= h).
+            nx: Number of states (required if F is None).
+            nu: Number of controls (required if G is None).
         """
-        super().__init__(is_equality)
         self.h = np.asarray(h, dtype=float)
+
+        if self.h.ndim > 1:
+            msg = "LinearConstraint h array must be 1D. Time-varying bounds are not supported."
+            raise ValueError(msg)
+
+        self.nc = self.h.shape[0] if self.h.size > 0 else 0
+
         self.F = np.asarray(F, dtype=float) if F is not None else None
         self.G = np.asarray(G, dtype=float) if G is not None else None
 
-        # Determine number of constraints from h
-        # h could be (nc,) or (N, nc)
-        self.nc = self.h.shape[-1] if self.h.ndim > 0 else 1
+        if self.F is not None and self.F.ndim > 2:
+            msg = "LinearConstraint F array must be 2D. Time-varying matrices are not supported."
+            raise ValueError(msg)
+
+        if self.G is not None and self.G.ndim > 2:
+            msg = "LinearConstraint G array must be 2D. Time-varying matrices are not supported."
+            raise ValueError(msg)
+
+        if self.F is not None:
+            if self.F.ndim == 1:
+                self.F = self.F.reshape(1, -1)
+            nx = self.F.shape[1]
+        elif nx is None:
+            msg = "nx must be provided if F is None."
+            raise ValueError(msg)
+
+        if self.G is not None:
+            if self.G.ndim == 1:
+                self.G = self.G.reshape(1, -1)
+            nu = self.G.shape[1]
+        elif nu is None:
+            msg = "nu must be provided if G is None."
+            raise ValueError(msg)
+
+        x_sym = ca.MX.sym("x", nx)
+        u_sym = ca.MX.sym("u", nu)
+
+        val = 0
+        if self.F is not None:
+            val += self.F @ x_sym
+        if self.G is not None:
+            val += self.G @ u_sym
+
+        f_val = val - self.h
+        f_func = ca.Function("linear_constraint", [x_sym, u_sym], [f_val])
+
+        super().__init__(f=f_func, is_equality=is_equality)
 
     def validate_dimensions(self, nx: int, nu: int) -> None:
         """
@@ -347,23 +391,89 @@ class LinearConstraint(BaseConstraint):
         ------
             ValueError: If the matrix dimensions do not match the expected state and control sizes.
         """
-        # Expected shapes: h is (nc,) or (N, nc)
-        # F is (nc, nx) or (N, nc, nx)
-        # G is (nc, nu) or (N, nc, nu)
+        super().validate_dimensions(nx, nu)
+
         if self.F is not None:
-            if self.F.shape[-1] != nx:
+            if self.F.shape[1] != nx:
                 msg = f"LinearConstraint F matrix last dimension must match state ({nx}) size."
                 raise ValueError(msg)
-            if self.F.shape[-2] != self.nc:
+            if self.F.shape[0] != self.nc:
                 msg = f"LinearConstraint F matrix must have {self.nc} rows."
                 raise ValueError(msg)
         if self.G is not None:
-            if self.G.shape[-1] != nu:
+            if self.G.shape[1] != nu:
                 msg = f"LinearConstraint G matrix last dimension must match control ({nu}) size."
                 raise ValueError(msg)
-            if self.G.shape[-2] != self.nc:
+            if self.G.shape[0] != self.nc:
                 msg = f"LinearConstraint G matrix must have {self.nc} rows."
                 raise ValueError(msg)
+
+
+class TerminalLinearConstraint(StateConstraint):
+    """Terminal constraint wrapping F*x <= h or == h."""
+
+    def __init__(
+        self,
+        h: ArrayLike,
+        F: ArrayLike,
+        is_equality: bool = False,
+    ) -> None:
+        """
+        Initialize the terminal linear constraint.
+
+        Parameters
+        ----------
+            h: Upper bound or target value array.
+            F: State coefficient matrix.
+            is_equality: Whether the constraint is an equality constraint (== h) or inequality (<= h).
+        """
+        self.h = np.asarray(h, dtype=float)
+        self.F = np.asarray(F, dtype=float)
+
+        if self.h.ndim > 1:
+            msg = "TerminalLinearConstraint h array must be 1D. Time-varying bounds are not supported."
+            raise ValueError(msg)
+
+        if self.F.ndim > 2:
+            msg = "TerminalLinearConstraint F array must be 2D. Time-varying matrices are not supported."
+            raise ValueError(msg)
+
+        if self.F.ndim == 1:
+            self.F = self.F.reshape(1, -1)
+
+        self.nc = self.h.shape[0] if self.h.size > 0 else 0
+        nx = self.F.shape[1]
+
+        x_sym = ca.MX.sym("x", nx)
+        f_val = self.F @ x_sym - self.h
+        f_func = ca.Function("terminal_linear_constraint", [x_sym], [f_val])
+
+        super().__init__(f=f_func, is_equality=is_equality)
+
+    def validate_dimensions(self, nx: int, nu: int) -> None:
+        """
+        Validate the dimensions of the linear constraint matrices against the state and control sizes.
+
+        Parameters
+        ----------
+            nx: Number of states.
+            nu: Number of controls.
+
+        Raises
+        ------
+            ValueError: If the matrix dimensions do not match the expected state and control sizes.
+        """
+        super().validate_dimensions(nx, nu)
+
+        if self.F.ndim == 1:
+            self.F = self.F.reshape(1, -1)
+
+        if self.F.shape[1] != nx:
+            msg = f"TerminalLinearConstraint F matrix last dimension must match state ({nx}) size."
+            raise ValueError(msg)
+        if self.F.shape[0] != self.nc:
+            msg = f"TerminalLinearConstraint F matrix must have {self.nc} rows."
+            raise ValueError(msg)
 
 
 class ConstraintList:

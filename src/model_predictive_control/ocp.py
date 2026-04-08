@@ -15,6 +15,7 @@ from model_predictive_control.constraints import (
     ControlConstraint,
     LinearConstraint,
     StateConstraint,
+    TerminalLinearConstraint,
 )
 
 
@@ -243,12 +244,12 @@ class OCP:  # noqa: D101 TODO: add doc string
                     )
 
         # Keep track of F, G, h for each constraint over N
-        # We'll build a LinearConstraint for each original constraint
+        # We'll build a LinearConstraint for each original constraint per timestep
         lin_constraint_data: list[dict[str, Any]] = []
         for c_data in constraint_funcs:
             c = c_data["c"]
             time_indices = c_data["ti"]
-            if isinstance(c, LinearConstraint):
+            if isinstance(c, (LinearConstraint, TerminalLinearConstraint)):
                 lin_constraint_data.append(c_data)
                 continue
 
@@ -290,74 +291,78 @@ class OCP:  # noqa: D101 TODO: add doc string
 
             for c_data in lin_constraint_data:
                 c = c_data["c"]
-                if isinstance(c, LinearConstraint):
+                if isinstance(c, (LinearConstraint, TerminalLinearConstraint)):
+                    resolved_indices = self.constraints.resolve_indices(c_data["ti"], N)
+                    if k in resolved_indices:
+                        lin_constraints.add(c, k)
                     continue
 
                 F_func = c_data["F_func"]
                 G_func = c_data["G_func"]
                 h_func_val = c_data["h_func"]
                 resolved_indices = c_data["res_idx"]
-                F_arr = c_data["F_arr"]
-                G_arr = c_data["G_arr"]
-                h_arr = c_data["h_arr"]
                 if k in resolved_indices:
-                    idx = resolved_indices.index(k)
+                    F_k = None
+                    G_k = None
                     if isinstance(c, StateConstraint):
-                        assert F_arr is not None
-                        F_arr[idx] = np.array(F_func(xk))
-                        h_arr[idx] = np.array(h_func_val(xk)).flatten()
+                        F_k = np.array(F_func(xk))
+                        h_k = np.array(h_func_val(xk)).flatten()
                     elif isinstance(c, ControlConstraint):
-                        assert G_arr is not None
-                        G_arr[idx] = np.array(G_func(uk))
-                        h_arr[idx] = np.array(h_func_val(uk)).flatten()
+                        G_k = np.array(G_func(uk))
+                        h_k = np.array(h_func_val(uk)).flatten()
                     elif isinstance(c, Constraint):
-                        assert F_arr is not None
-                        assert G_arr is not None
-                        F_arr[idx] = np.array(F_func(xk, uk))
-                        G_arr[idx] = np.array(G_func(xk, uk))
-                        h_arr[idx] = np.array(h_func_val(xk, uk)).flatten()
+                        F_k = np.array(F_func(xk, uk))
+                        G_k = np.array(G_func(xk, uk))
+                        h_k = np.array(h_func_val(xk, uk)).flatten()
+
+                    if F_k is not None and F_k.shape[0] == 1 and F_k.ndim == 2:
+                        F_k = F_k[0]
+                    if G_k is not None and G_k.shape[0] == 1 and G_k.ndim == 2:
+                        G_k = G_k[0]
+
+                    lin_c = LinearConstraint(h=h_k, F=F_k, G=G_k, nx=nx, nu=nu, is_equality=c.is_equality)
+                    lin_constraints.add(lin_c, k)
 
         # Terminal step (N) constraint evaluations
         xN = X_bar[N]
         for c_data in lin_constraint_data:
             c = c_data["c"]
-            if isinstance(c, LinearConstraint):
-                lin_constraints.add(c, c_data["ti"])
+            if isinstance(c, (LinearConstraint, TerminalLinearConstraint)):
+                resolved_indices = self.constraints.resolve_indices(c_data["ti"], N)
+                if N in resolved_indices:
+                    lin_constraints.add(c, N)
                 continue
 
             F_func = c_data["F_func"]
             G_func = c_data["G_func"]
             h_func_val = c_data["h_func"]
             resolved_indices = c_data["res_idx"]
-            F_arr = c_data["F_arr"]
-            G_arr = c_data["G_arr"]
-            h_arr = c_data["h_arr"]
             if N in resolved_indices:
-                idx = resolved_indices.index(N)
+                F_N = None
+                G_N = None
                 if isinstance(c, StateConstraint):
-                    assert F_arr is not None
-                    F_arr[idx] = np.array(F_func(xN))
-                    h_arr[idx] = np.array(h_func_val(xN)).flatten()
+                    F_N = np.array(F_func(xN))
+                    h_N = np.array(h_func_val(xN)).flatten()
                 elif isinstance(c, Constraint):
                     # For terminal constraint on (x, u), we use u=0 as a dummy since u_N is not defined,
                     # but usually terminal constraints are StateConstraints.
-                    assert F_arr is not None
-                    assert G_arr is not None
                     dummy_u = np.zeros(nu)
-                    F_arr[idx] = np.array(F_func(xN, dummy_u))
-                    G_arr[idx] = np.array(G_func(xN, dummy_u))
-                    h_arr[idx] = np.array(h_func_val(xN, dummy_u)).flatten()
+                    F_N = np.array(F_func(xN, dummy_u))
+                    G_N = np.array(G_func(xN, dummy_u))
+                    h_N = np.array(h_func_val(xN, dummy_u)).flatten()
 
-            # Squeeze time dim if it's only 1 step long, just to keep arrays simpler
-            if F_arr is not None and F_arr.shape[0] == 1:
-                F_arr = F_arr[0]
-            if G_arr is not None and G_arr.shape[0] == 1:
-                G_arr = G_arr[0]
-            if h_arr.shape[0] == 1:
-                h_arr = h_arr[0]
+                if F_N is not None and F_N.shape[0] == 1 and F_N.ndim == 2:
+                    F_N = F_N[0]
+                if G_N is not None and G_N.shape[0] == 1 and G_N.ndim == 2:
+                    G_N = G_N[0]
 
-            lin_c = LinearConstraint(h=h_arr, F=F_arr, G=G_arr, is_equality=c.is_equality)
-            lin_constraints.add(lin_c, resolved_indices)
+                if isinstance(c, StateConstraint):
+                    assert F_N is not None
+                    lin_term_c = TerminalLinearConstraint(h=h_N, F=F_N, is_equality=c.is_equality)
+                    lin_constraints.add(lin_term_c, N)
+                else:
+                    lin_c = LinearConstraint(h=h_N, F=F_N, G=G_N, nx=nx, nu=nu, is_equality=c.is_equality)
+                    lin_constraints.add(lin_c, N)
 
         # Terminal cost
         x_N_sym = ca.MX.sym("x_N", nx)
@@ -857,20 +862,6 @@ def lqr_objective(  # noqa: D103, TODO: fix D103
     )
 
 
-def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
-    nx = F.shape[1]
-    nu = G.shape[1]
-
-    if F.shape[0] != G.shape[0] or F.shape[0] != h.shape[0]:
-        msg = "The number of rows in F, G, and h must be equal."
-        raise ValueError(msg)
-
-    x = ca.MX.sym("x", nx)
-    u = ca.MX.sym("u", nu)
-
-    return ca.Function("lin_con", [x, u], [F @ x + G @ u - h], ["x", "u"], ["f"])
-
-
 def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
     nx = A.shape[1]
     nu = B.shape[1]
@@ -916,18 +907,6 @@ def terminal_lqr_objective(Q: np.ndarray) -> Function:  # noqa: D103   TODO: fix
     dx = x - x_ref
 
     return ca.Function("term_lqr_obj", [x, x_ref], [dx.T @ Q @ dx], ["x", "x_ref"], ["f"])
-
-
-def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
-    nx = F.shape[1]
-
-    if F.shape[0] != h.shape[0]:
-        msg = "The number of rows in F and h must be equal."
-        raise ValueError(msg)
-
-    x = ca.MX.sym("x", nx)
-
-    return ca.Function("term_lin_con", [x], [F @ x - h], ["x"], ["f"])
 
 
 class LinearOCP:  # noqa: D101
@@ -1121,12 +1100,9 @@ class LinearOCP:  # noqa: D101
             n_ineq = 0
             # Pre-calculate total number of constraints
             for constraint, time_indices in self.constraints:
-                if not isinstance(constraint, LinearConstraint):
+                if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
                     continue
                 resolved_indices = self.constraints.resolve_indices(time_indices, N)
-                # constraint.h could be (nc,) or (len(resolved), nc)
-                # if it's (nc,), it applies nc constraints per time index
-                # if it's (len(resolved), nc), it also applies nc constraints per time index
                 nc = constraint.nc
                 n_ineq += len(resolved_indices) * nc
 
@@ -1137,34 +1113,28 @@ class LinearOCP:  # noqa: D101
 
                 curr_row = 0
                 for constraint, time_indices in self.constraints:
-                    if not isinstance(constraint, LinearConstraint):
+                    if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
                         continue
 
                     resolved_indices = self.constraints.resolve_indices(time_indices, N)
                     nc = constraint.nc
 
-                    is_time_varying = constraint.h.ndim > 1
-
-                    for i, k in enumerate(resolved_indices):
+                    for k in resolved_indices:
                         if k == N:
                             idx_x = N * (nx + nu)
                             if constraint.F is not None:
-                                F_k = constraint.F[i] if is_time_varying and constraint.F.ndim > 2 else constraint.F
-                                A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = F_k
+                                A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = constraint.F
                         else:
                             idx_x = k * (nx + nu)
                             idx_u = idx_x + nx
                             if constraint.F is not None:
-                                F_k = constraint.F[i] if is_time_varying and constraint.F.ndim > 2 else constraint.F
-                                A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = F_k
-                            if constraint.G is not None:
-                                G_k = constraint.G[i] if is_time_varying and constraint.G.ndim > 2 else constraint.G
-                                A_ineq[curr_row : curr_row + nc, idx_x + nx : idx_x + nx + nu] = G_k
+                                A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = constraint.F
+                            if isinstance(constraint, LinearConstraint) and constraint.G is not None:
+                                A_ineq[curr_row : curr_row + nc, idx_x + nx : idx_x + nx + nu] = constraint.G
 
-                        h_k = constraint.h[i] if is_time_varying else constraint.h
-                        uba_ineq[curr_row : curr_row + nc] = h_k
+                        uba_ineq[curr_row : curr_row + nc] = constraint.h
                         if constraint.is_equality:
-                            lba_ineq[curr_row : curr_row + nc] = h_k
+                            lba_ineq[curr_row : curr_row + nc] = constraint.h
                         else:
                             lba_ineq[curr_row : curr_row + nc] = -1e9
 
@@ -1235,7 +1205,7 @@ class LinearOCP:  # noqa: D101
 
             n_ineq = 0
             for constraint, time_indices in self.constraints:
-                if not isinstance(constraint, LinearConstraint):
+                if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
                     continue
                 resolved_indices = self.constraints.resolve_indices(time_indices, N)
                 nc = constraint.nc
@@ -1249,27 +1219,23 @@ class LinearOCP:  # noqa: D101
 
                 curr_row = 0
                 for constraint, time_indices in self.constraints:
-                    if not isinstance(constraint, LinearConstraint):
+                    if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
                         continue
 
                     resolved_indices = self.constraints.resolve_indices(time_indices, N)
                     nc = constraint.nc
-                    is_time_varying = constraint.h.ndim > 1
 
-                    for i, k in enumerate(resolved_indices):
+                    for k in resolved_indices:
                         if constraint.F is not None:
-                            F_k = constraint.F[i] if is_time_varying and constraint.F.ndim > 2 else constraint.F
-                            F_bar[curr_row : curr_row + nc, k * nx : (k + 1) * nx] = F_k
+                            F_bar[curr_row : curr_row + nc, k * nx : (k + 1) * nx] = constraint.F
 
-                        if k < N and constraint.G is not None:
-                            G_k = constraint.G[i] if is_time_varying and constraint.G.ndim > 2 else constraint.G
-                            G_bar[curr_row : curr_row + nc, k * nu : (k + 1) * nu] = G_k
+                        if k < N and isinstance(constraint, LinearConstraint) and constraint.G is not None:
+                            G_bar[curr_row : curr_row + nc, k * nu : (k + 1) * nu] = constraint.G
 
-                        h_k = constraint.h[i] if is_time_varying else constraint.h
-                        h_bar[curr_row : curr_row + nc] = h_k
+                        h_bar[curr_row : curr_row + nc] = constraint.h
 
                         if constraint.is_equality:
-                            lba_ineq[curr_row : curr_row + nc] = h_k
+                            lba_ineq[curr_row : curr_row + nc] = constraint.h
                         else:
                             lba_ineq[curr_row : curr_row + nc] = -1e9
 
