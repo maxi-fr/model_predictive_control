@@ -11,10 +11,11 @@ from model_predictive_control.constraints import (
     LinearConstraint,
     StateConstraint,
 )
+from model_predictive_control.objective import CostFunction, Objective, QuadraticObjective
 from model_predictive_control.ocp import OCP, rk4_integrator
 
 
-def setup_simple_ocp(dynamics: ca.Function | None = None, objective: ca.Function | None = None, **kwargs: Any) -> OCP:  # noqa: ANN401
+def setup_simple_ocp(dynamics: ca.Function | None = None, objective: Objective | None = None, **kwargs: Any) -> OCP:  # noqa: ANN401
     # Simple double integrator system
     # x = [p, v], u = [a]
     nx = 2
@@ -31,17 +32,16 @@ def setup_simple_ocp(dynamics: ca.Function | None = None, objective: ca.Function
 
     if objective is None:
         obj = x[0] ** 2 + x[1] ** 2 + u[0] ** 2
-        objective = ca.Function("obj", [x, u], [obj])
+        term_obj = 10 * (x[0] ** 2 + x[1] ** 2)
+        objective = Objective(
+            CostFunction(ca.Function("obj", [x, u], [obj])), CostFunction(ca.Function("term_obj", [x], [term_obj])), N
+        )
 
     if "constraints" not in kwargs:
         ineq = u[0] ** 2 - 1.0
         cl = ConstraintList()
         cl.add(Constraint(ca.Function("ineq", [x, u], [ineq])), range(N))
         kwargs["constraints"] = cl
-
-    if "terminal_objective" not in kwargs:
-        term_obj = 10 * (x[0] ** 2 + x[1] ** 2)
-        kwargs["terminal_objective"] = ca.Function("term_obj", [x], [term_obj])
 
     return OCP(N, dt, objective, dynamics, **kwargs)
 
@@ -60,8 +60,8 @@ def test_ocp_validation_wrong_dims() -> None:
     u_wrong = ca.MX.sym("u", nu)
     obj_wrong = ca.Function("obj", [x_wrong, u_wrong], [x_wrong[0] ** 2 + u_wrong[0] ** 2])
 
-    with pytest.raises(ValueError, match="Objective function inputs must match"):
-        setup_simple_ocp(objective=obj_wrong)
+    with pytest.raises(ValueError, match="Cost function state input size"):
+        setup_simple_ocp(objective=Objective(CostFunction(obj_wrong), 10))
 
     # Break dynamics output size
     x = ca.MX.sym("x", nx)
@@ -91,8 +91,10 @@ def test_ocp_validation_wrong_dims() -> None:
 
     # Break terminal objective
     term_obj_wrong = ca.Function("term_obj_wrong", [x_wrong], [x_wrong[0]])
-    with pytest.raises(ValueError, match="terminal_objective function input must match"):
-        setup_simple_ocp(terminal_objective=term_obj_wrong)
+    with pytest.raises(ValueError, match="Cost function state input size"):
+        setup_simple_ocp(
+            objective=Objective(CostFunction(ca.Function("obj", [x, u], [x[0] ** 2])), CostFunction(term_obj_wrong), 10)
+        )
 
     # Break terminal eq_constraints
     term_eq_wrong = ca.Function("term_eq_wrong", [x_wrong], [x_wrong[0]])
@@ -197,7 +199,8 @@ def test_linearize_method() -> None:
     dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[1], ca.sin(x[0]) + u)], ["x", "u"], ["f"])
 
     # Objective: L(x,u) = x1^2 + x2^2 + u^2 + x1*u
-    obj = ca.Function("obj", [x, u], [x[0] ** 2 + x[1] ** 2 + u**2 + x[0] * u], ["x", "u"], ["f"])
+    obj_func = ca.Function("obj", [x, u], [x[0] ** 2 + x[1] ** 2 + u**2 + x[0] * u], ["x", "u"], ["f"])
+    obj = Objective(CostFunction(obj_func), N)
 
     # Constraints: u <= 1 -> u - 1 <= 0
     in_eq = ca.Function("in_eq", [x, u], [u - 1], ["x", "u"], ["f"])
@@ -266,11 +269,11 @@ def test_linearize_equivalence() -> None:
     # Objective: 0.5*(x^T Q x + u^T R u)
     Q = np.eye(2) * 10
     R = np.eye(1)
-    obj = ca.Function("obj", [x, u], [0.5 * (x.T @ Q @ x + u.T @ R @ u)], ["x", "u"], ["f"])
+    obj_func = ca.Function("obj", [x, u], [0.5 * (x.T @ Q @ x + u.T @ R @ u)], ["x", "u"], ["f"])
+    term_obj_func = ca.Function("term_obj", [x], [0.5 * (x.T @ Q @ x)], ["x"], ["f"])
+    obj = Objective(CostFunction(obj_func), CostFunction(term_obj_func), N)
 
-    term_obj = ca.Function("term_obj", [x], [0.5 * (x.T @ Q @ x)], ["x"], ["f"])
-
-    ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
 
     ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="ipopt", solver_opts={"print_level": 0})
     X_nl, U_nl, status_nl = ocp.solve(np.array([1.0, 0.0]))
@@ -332,11 +335,11 @@ def test_riccati_equivalence() -> None:
 
     Q = np.eye(2) * 10
     R = np.eye(1)
-    obj = ca.Function("obj", [x, u], [0.5 * (x.T @ Q @ x + u.T @ R @ u)], ["x", "u"], ["f"])
+    obj_func = ca.Function("obj", [x, u], [0.5 * (x.T @ Q @ x + u.T @ R @ u)], ["x", "u"], ["f"])
+    term_obj_func = ca.Function("term_obj", [x], [0.5 * (x.T @ Q @ x)], ["x"], ["f"])
+    obj = Objective(CostFunction(obj_func), CostFunction(term_obj_func), N)
 
-    term_obj = ca.Function("term_obj", [x], [0.5 * (x.T @ Q @ x)], ["x"], ["f"])
-
-    ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
 
     # Linearize around 0
     x_bar = np.array([0.0, 0.0])
@@ -378,10 +381,11 @@ def test_ocp_calculate_trajectory_cost() -> None:
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
     dyn = ca.Function("dyn", [x, u], [ca.vertcat(x[0] + u, x[1])])
-    obj = ca.Function("obj", [x, u], [x[0] ** 2 + u[0] ** 2])
-    term_obj = ca.Function("term", [x], [2 * x[0] ** 2])
+    obj_func = ca.Function("obj", [x, u], [x[0] ** 2 + u[0] ** 2])
+    term_obj_func = ca.Function("term", [x], [2 * x[0] ** 2])
+    obj = Objective(CostFunction(obj_func), CostFunction(term_obj_func), N)
 
-    ocp = OCP(N=N, dt=dt, dynamics=dyn, objective=obj, terminal_objective=term_obj)
+    ocp = OCP(N=N, dt=dt, dynamics=dyn, objective=obj)
 
     X_test = np.ones((N + 1, nx))
     U_test = np.ones((N, nu)) * 2
@@ -414,11 +418,12 @@ def test_linear_ocp_calculate_trajectory_cost() -> None:
 
     # Obj is 0.5 * (x^T Q x + u^T R u) for linear OCP setup -> x^T x + u^T u
     # so we define nonlinear cost identically for equivalence
-    obj = ca.Function("obj", [x, u], [x.T @ x + u.T @ u])
+    obj_func = ca.Function("obj", [x, u], [x.T @ x + u.T @ u])
 
-    term_obj = ca.Function("term_obj", [x], [2 * (x.T @ x)])
+    term_obj_func = ca.Function("term_obj", [x], [2 * (x.T @ x)])
+    obj = Objective(CostFunction(obj_func), CostFunction(term_obj_func), N)
 
-    ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
     lin_ocp = ocp.linearize(np.zeros(2), np.zeros(1), dynamics_type="discrete")
 
     X_test = np.ones((N + 1, nx))
