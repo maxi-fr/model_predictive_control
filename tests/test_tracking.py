@@ -1,7 +1,8 @@
 import casadi as ca
 import numpy as np
 
-from model_predictive_control.ocp import OCP, LinearOCP, lqr_objective, terminal_lqr_objective
+from model_predictive_control.objective import LQRObjective
+from model_predictive_control.ocp import OCP, LinearOCP
 
 
 def test_ocp_with_tracking_reference() -> None:
@@ -20,10 +21,9 @@ def test_ocp_with_tracking_reference() -> None:
     Q = np.eye(nx) * 10
     R = np.eye(nu) * 0.1
 
-    obj = lqr_objective(Q, R)
-    term_obj = terminal_lqr_objective(Q * 10)
+    obj = LQRObjective(Q, R, Q * 10, N)
 
-    ocp = OCP(N=N, dt=dt, objective=obj, terminal_objective=term_obj, dynamics=dyn)
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
 
     ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="ipopt", solver_opts={"print_level": 0})
 
@@ -88,7 +88,7 @@ def test_linearize_with_reference() -> None:
     Q = np.eye(nx)
     R = np.eye(nu)
 
-    obj = lqr_objective(Q, R)
+    obj = LQRObjective(Q, R, np.zeros((nx, nx)), N)
 
     ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
 

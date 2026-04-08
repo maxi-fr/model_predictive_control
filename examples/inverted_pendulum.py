@@ -29,10 +29,9 @@ from model_predictive_control.constraints import ConstraintList, Constraint, Sta
 from model_predictive_control.ocp import (
     OCP,
     control_bounds_constraints,
-    quadratic_objective,
     state_bounds_constraints,
-    terminal_quadratic_objective,
 )
+from model_predictive_control.objective import QuadraticObjective
 from model_predictive_control.plots import plot_controls, plot_states
 
 # %% [markdown]
@@ -100,12 +99,14 @@ q_term = np.zeros(nx)
 r_term = np.zeros(nu)
 N_cross = np.zeros((nx, nu))
 
-# Stage cost function using prebuilt component
-objective = quadratic_objective(Q, R, q_term, r_term, N_cross)
-
 # Terminal cost matrix (higher penalty for final state to ensure reaching the target)
 Qf = np.diag([100.0, 10.0, 100.0, 10.0])
-terminal_objective = terminal_quadratic_objective(Qf, q_term)
+
+N = 100  # Number of intervals
+dt = 0.05  # Time step (s)
+
+# Stage cost function using prebuilt component
+objective = QuadraticObjective(Q, R, Qf, q_term, N, q_term, r_term, N_cross)
 
 
 # %% [markdown]
@@ -143,10 +144,6 @@ cl.add(Constraint(in_eq_constraints), slice(None))
 #
 
 # %%
-# OCP configuration
-N = 100  # Number of intervals
-dt = 0.05  # Time step (s)
-
 # Initial state: Cart at origin, pendulum offset by 0.5 radians (~28.6 degrees)
 x0_val = np.array([0.0, 0.0, 0.5, 0.0])
 
@@ -156,7 +153,6 @@ ocp = OCP(
     dt=dt,
     objective=objective,
     dynamics=dynamics,
-    terminal_objective=terminal_objective,
     constraints=cl,
 )
 

@@ -1,6 +1,6 @@
 import warnings
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import casadi as ca
 import numpy as np
@@ -17,23 +17,28 @@ from model_predictive_control.constraints import (
     StateConstraint,
 )
 
+if TYPE_CHECKING:
+    import model_predictive_control.objective as objective_mod
+
 
 class OCP:  # noqa: D101 TODO: add doc string
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         N: int,
         dt: float,
-        objective: ca.Function,
+        objective: "objective_mod.Objective",
         dynamics: ca.Function,
         constraints: ConstraintList | None = None,
-        terminal_objective: ca.Function | None = None,
     ) -> None:
         self.N = N
         self.dt = dt
         self.objective = objective
         self.dynamics = dynamics
         self.constraints = constraints if constraints is not None else ConstraintList()
-        self.terminal_objective = terminal_objective
+
+        if len(self.objective.stage_costs) != self.N:
+            msg = f"Objective must have {self.N} stage costs, got {len(self.objective.stage_costs)}"
+            raise ValueError(msg)
 
         self._opti: ca.Opti | None = None
         self._x0_param: ca.MX | None = None
@@ -42,7 +47,7 @@ class OCP:  # noqa: D101 TODO: add doc string
 
         self._nx, self._nu = self.validate_dimensions()
 
-    def validate_dimensions(self) -> tuple[int, int]:  # noqa: C901
+    def validate_dimensions(self) -> tuple[int, int]:
         """Validate all casadi functions and returns nx and nu."""
         if self.dynamics.n_in() < 2:
             msg = "Dynamics function must take at least two arguments (state x and control u)."
@@ -55,30 +60,7 @@ class OCP:  # noqa: D101 TODO: add doc string
             msg = f"Dynamics function output size ({self.dynamics.size_out(0)[0]}) must match state size ({nx})."
             raise ValueError(msg)
 
-        if self.objective.size_in(0)[0] != nx or self.objective.size_in(1)[0] != nu:
-            msg = f"Objective function inputs must match state ({nx}) and control ({nu}) sizes."
-            raise ValueError(msg)
-
-        if self.objective.n_in() == 4 and (self.objective.size_in(2)[0] != nx or self.objective.size_in(3)[0] != nu):
-            msg = f"Objective function reference inputs must match state ({nx}) and control ({nu}) sizes."
-            raise ValueError(msg)
-
-        if self.objective.size_out(0)[0] != 1:
-            msg = "Objective function must return a scalar."
-            raise ValueError(msg)
-
-        if hasattr(self, "terminal_objective") and self.terminal_objective is not None:
-            if self.terminal_objective.size_in(0)[0] != nx:
-                msg = f"terminal_objective function input must match state ({nx}) size."
-                raise ValueError(msg)
-
-            if self.terminal_objective.n_in() == 2 and self.terminal_objective.size_in(1)[0] != nx:
-                msg = f"terminal_objective function reference input must match state ({nx}) size."
-                raise ValueError(msg)
-
-            if self.terminal_objective.size_out(0)[0] != 1:
-                msg = "terminal_objective function must return a scalar."
-                raise ValueError(msg)
+        self.objective.validate_dimensions(nx, nu)
 
         if hasattr(self, "constraints") and self.constraints is not None:
             for constraint, _ in self.constraints:
@@ -106,7 +88,7 @@ class OCP:  # noqa: D101 TODO: add doc string
         X_ref: np.ndarray | None = None
         U_ref: np.ndarray | None = None
 
-        if self.objective.n_in() == 4:
+        if self.objective.has_reference:
             if x_ref is None:
                 X_ref = np.zeros((N + 1, nx))
             else:
@@ -121,18 +103,6 @@ class OCP:  # noqa: D101 TODO: add doc string
                 U_ref = np.asarray(u_ref, dtype=float)
                 if U_ref.shape != (N, nu):
                     msg = f"u_ref trajectory must have shape ({N}, {nu})"
-                    raise ValueError(msg)
-        elif (
-            hasattr(self, "terminal_objective")
-            and self.terminal_objective is not None
-            and self.terminal_objective.n_in() == 2
-        ):
-            if x_ref is None:
-                X_ref = np.zeros((N + 1, nx))
-            else:
-                X_ref = np.asarray(x_ref, dtype=float)
-                if X_ref.shape != (N + 1, nx):
-                    msg = f"x_ref trajectory must have shape ({N + 1}, {nx})"
                     raise ValueError(msg)
 
         if x_bar.ndim == 1:
@@ -181,24 +151,41 @@ class OCP:  # noqa: D101 TODO: add doc string
         B_func = ca.Function("B", [x_sym, u_sym], [ca.jacobian(f_val, u_sym)])
 
         # Objective symbolic derivatives
-        if self.objective.n_in() == 4:
-            x_ref_sym = ca.MX.sym("x_ref", nx)
-            u_ref_sym = ca.MX.sym("u_ref", nu)
-            L_val = self.objective(x_sym, u_sym, x_ref_sym, u_ref_sym)
-            q_func = ca.Function("q", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(L_val, x_sym).T])
-            r_func = ca.Function("r", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(L_val, u_sym).T])
-            Q_func = ca.Function("Q", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.hessian(L_val, x_sym)[0]])
-            R_func = ca.Function("R", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.hessian(L_val, u_sym)[0]])
-            grad_x = ca.jacobian(L_val, x_sym)
-            N_cross_func = ca.Function("N_cross", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(grad_x, u_sym)])
-        else:
-            L_val = self.objective(x_sym, u_sym)
-            q_func = ca.Function("q", [x_sym, u_sym], [ca.jacobian(L_val, x_sym).T])
-            r_func = ca.Function("r", [x_sym, u_sym], [ca.jacobian(L_val, u_sym).T])
-            Q_func = ca.Function("Q", [x_sym, u_sym], [ca.hessian(L_val, x_sym)[0]])
-            R_func = ca.Function("R", [x_sym, u_sym], [ca.hessian(L_val, u_sym)[0]])
-            grad_x = ca.jacobian(L_val, x_sym)
-            N_cross_func = ca.Function("N_cross", [x_sym, u_sym], [ca.jacobian(grad_x, u_sym)])
+        q_funcs = []
+        r_funcs = []
+        Q_funcs = []
+        R_funcs = []
+        N_cross_funcs = []
+
+        x_ref_sym = ca.MX.sym("x_ref", nx)
+        u_ref_sym = ca.MX.sym("u_ref", nu)
+
+        for k in range(N):
+            stage_cost = self.objective.stage_costs[k]
+            if stage_cost.has_reference:
+                L_val = stage_cost.f(x_sym, u_sym, x_ref_sym, u_ref_sym)
+                q_func = ca.Function(f"q_{k}", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(L_val, x_sym).T])
+                r_func = ca.Function(f"r_{k}", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(L_val, u_sym).T])
+                Q_func = ca.Function(f"Q_{k}", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.hessian(L_val, x_sym)[0]])
+                R_func = ca.Function(f"R_{k}", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.hessian(L_val, u_sym)[0]])
+                grad_x = ca.jacobian(L_val, x_sym)
+                N_cross_func = ca.Function(
+                    f"N_cross_{k}", [x_sym, u_sym, x_ref_sym, u_ref_sym], [ca.jacobian(grad_x, u_sym)]
+                )
+            else:
+                L_val = stage_cost.f(x_sym, u_sym)
+                q_func = ca.Function(f"q_{k}", [x_sym, u_sym], [ca.jacobian(L_val, x_sym).T])
+                r_func = ca.Function(f"r_{k}", [x_sym, u_sym], [ca.jacobian(L_val, u_sym).T])
+                Q_func = ca.Function(f"Q_{k}", [x_sym, u_sym], [ca.hessian(L_val, x_sym)[0]])
+                R_func = ca.Function(f"R_{k}", [x_sym, u_sym], [ca.hessian(L_val, u_sym)[0]])
+                grad_x = ca.jacobian(L_val, x_sym)
+                N_cross_func = ca.Function(f"N_cross_{k}", [x_sym, u_sym], [ca.jacobian(grad_x, u_sym)])
+
+            q_funcs.append(q_func)
+            r_funcs.append(r_func)
+            Q_funcs.append(Q_func)
+            R_funcs.append(R_func)
+            N_cross_funcs.append(N_cross_func)
 
         # Arrays for the linear OCP
         A = np.zeros((N, nx, nx))
@@ -271,22 +258,24 @@ class OCP:  # noqa: D101 TODO: add doc string
 
             A[k] = np.array(A_func(xk, uk))
             B[k] = np.array(B_func(xk, uk))
-            if self.objective.n_in() == 4:
+
+            stage_cost = self.objective.stage_costs[k]
+            if stage_cost.has_reference:
                 assert U_ref is not None
                 assert X_ref is not None
                 x_ref_k = X_ref[k]
                 u_ref_k = U_ref[k]
-                Q[k] = np.array(Q_func(xk, uk, x_ref_k, u_ref_k))
-                R[k] = np.array(R_func(xk, uk, x_ref_k, u_ref_k))
-                N_cross[k] = np.array(N_cross_func(xk, uk, x_ref_k, u_ref_k))
-                q[k] = np.array(q_func(xk, uk, x_ref_k, u_ref_k)).flatten()
-                r[k] = np.array(r_func(xk, uk, x_ref_k, u_ref_k)).flatten()
+                Q[k] = np.array(Q_funcs[k](xk, uk, x_ref_k, u_ref_k))
+                R[k] = np.array(R_funcs[k](xk, uk, x_ref_k, u_ref_k))
+                N_cross[k] = np.array(N_cross_funcs[k](xk, uk, x_ref_k, u_ref_k))
+                q[k] = np.array(q_funcs[k](xk, uk, x_ref_k, u_ref_k)).flatten()
+                r[k] = np.array(r_funcs[k](xk, uk, x_ref_k, u_ref_k)).flatten()
             else:
-                Q[k] = np.array(Q_func(xk, uk))
-                R[k] = np.array(R_func(xk, uk))
-                N_cross[k] = np.array(N_cross_func(xk, uk))
-                q[k] = np.array(q_func(xk, uk)).flatten()
-                r[k] = np.array(r_func(xk, uk)).flatten()
+                Q[k] = np.array(Q_funcs[k](xk, uk))
+                R[k] = np.array(R_funcs[k](xk, uk))
+                N_cross[k] = np.array(N_cross_funcs[k](xk, uk))
+                q[k] = np.array(q_funcs[k](xk, uk)).flatten()
+                r[k] = np.array(r_funcs[k](xk, uk)).flatten()
 
             for c_data in lin_constraint_data:
                 c = c_data["c"]
@@ -361,11 +350,11 @@ class OCP:  # noqa: D101 TODO: add doc string
 
         # Terminal cost
         x_N_sym = ca.MX.sym("x_N", nx)
-        if self.terminal_objective is not None:
-            if self.terminal_objective.n_in() == 2:
+        if self.objective.terminal_cost is not None:
+            if self.objective.terminal_cost.has_reference:
                 assert X_ref is not None
                 x_ref_N_sym = ca.MX.sym("x_ref_N", nx)
-                L_term_val = self.terminal_objective(x_N_sym, x_ref_N_sym)
+                L_term_val = self.objective.terminal_cost.f(x_N_sym, x_ref_N_sym)
                 qf_func = ca.Function("qf", [x_N_sym, x_ref_N_sym], [ca.jacobian(L_term_val, x_N_sym).T])
                 Qf_func = ca.Function("Qf", [x_N_sym, x_ref_N_sym], [ca.hessian(L_term_val, x_N_sym)[0]])
 
@@ -374,7 +363,7 @@ class OCP:  # noqa: D101 TODO: add doc string
                 Qf = np.array(Qf_func(xN, x_ref_N))
                 qf = np.array(qf_func(xN, x_ref_N)).flatten()
             else:
-                L_term_val = self.terminal_objective(x_N_sym)
+                L_term_val = self.objective.terminal_cost.f(x_N_sym)
                 qf_func = ca.Function("qf", [x_N_sym], [ca.jacobian(L_term_val, x_N_sym).T])
                 Qf_func = ca.Function("Qf", [x_N_sym], [ca.hessian(L_term_val, x_N_sym)[0]])
 
@@ -418,15 +407,9 @@ class OCP:  # noqa: D101 TODO: add doc string
         self._x_ref_param = None
         self._u_ref_param = None
 
-        if self.objective.n_in() == 4:
+        if self.objective.has_reference:
             self._x_ref_param = self._opti.parameter(nx, self.N + 1)
             self._u_ref_param = self._opti.parameter(nu, self.N)
-        elif (
-            hasattr(self, "terminal_objective")
-            and self.terminal_objective is not None
-            and self.terminal_objective.n_in() == 2
-        ):
-            self._x_ref_param = self._opti.parameter(nx, self.N + 1)
 
         if method == "collocation":
             if integrator is not None:
@@ -460,12 +443,13 @@ class OCP:  # noqa: D101 TODO: add doc string
                 u_k = self._U[:, k]
 
                 # Cost
-                if self.objective.n_in() == 4:
+                stage_cost = self.objective.stage_costs[k]
+                if stage_cost.has_reference:
                     assert self._x_ref_param is not None
                     assert self._u_ref_param is not None
-                    cost += self.objective(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
                 else:
-                    cost += self.objective(x_k, u_k)
+                    cost += stage_cost.f(x_k, u_k)
 
                 # Constraints
                 for constraint, time_indices in self.constraints:
@@ -499,12 +483,13 @@ class OCP:  # noqa: D101 TODO: add doc string
                 u_k = self._U[:, k]
 
                 # Cost
-                if self.objective.n_in() == 4:
+                stage_cost = self.objective.stage_costs[k]
+                if stage_cost.has_reference:
                     assert self._x_ref_param is not None
                     assert self._u_ref_param is not None
-                    cost += self.objective(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
                 else:
-                    cost += self.objective(x_k, u_k)
+                    cost += stage_cost.f(x_k, u_k)
 
                 # Constraints
                 for constraint, time_indices in self.constraints:
@@ -544,12 +529,13 @@ class OCP:  # noqa: D101 TODO: add doc string
                 u_k = self._U[:, k]
 
                 # Cost
-                if self.objective.n_in() == 4:
+                stage_cost = self.objective.stage_costs[k]
+                if stage_cost.has_reference:
                     assert self._x_ref_param is not None
                     assert self._u_ref_param is not None
-                    cost += self.objective(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
                 else:
-                    cost += self.objective(x_k, u_k)
+                    cost += stage_cost.f(x_k, u_k)
 
                 # Constraints
                 for constraint, time_indices in self.constraints:
@@ -585,12 +571,12 @@ class OCP:  # noqa: D101 TODO: add doc string
 
         # Terminal conditions
         x_N = self._X[:, self.N]
-        if self.terminal_objective is not None:
-            if self.terminal_objective.n_in() == 2:
+        if self.objective.terminal_cost is not None:
+            if self.objective.terminal_cost.has_reference:
                 assert self._x_ref_param is not None
-                cost += self.terminal_objective(x_N, self._x_ref_param[:, self.N])
+                cost += self.objective.terminal_cost.f(x_N, self._x_ref_param[:, self.N])
             else:
-                cost += self.terminal_objective(x_N)
+                cost += self.objective.terminal_cost.f(x_N)
 
         for constraint, time_indices in self.constraints:
             resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
@@ -710,7 +696,7 @@ class OCP:  # noqa: D101 TODO: add doc string
 
         return X_opt.T, U_opt.T, status
 
-    def calculate_trajectory_cost(  # noqa: C901, PLR0912, PLR0915
+    def calculate_trajectory_cost(  # noqa: C901, PLR0912
         self,
         X: ArrayLike,
         U: ArrayLike,
@@ -731,7 +717,7 @@ class OCP:  # noqa: D101 TODO: add doc string
         X_ref_arr = None
         U_ref_arr = None
 
-        if self.objective.n_in() == 4:
+        if self.objective.has_reference:
             if x_ref is None:
                 X_ref_arr = np.zeros((self.N + 1, self._nx))
             else:
@@ -747,18 +733,6 @@ class OCP:  # noqa: D101 TODO: add doc string
                 if U_ref_arr.shape != (self.N, self._nu):
                     msg = f"u_ref must have shape ({self.N}, {self._nu})"
                     raise ValueError(msg)
-        elif (
-            hasattr(self, "terminal_objective")
-            and self.terminal_objective is not None
-            and self.terminal_objective.n_in() == 2
-        ):
-            if x_ref is None:
-                X_ref_arr = np.zeros((self.N + 1, self._nx))
-            else:
-                X_ref_arr = np.asarray(x_ref, dtype=float)
-                if X_ref_arr.shape != (self.N + 1, self._nx):
-                    msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
-                    raise ValueError(msg)
 
         total_cost = 0.0
 
@@ -766,21 +740,22 @@ class OCP:  # noqa: D101 TODO: add doc string
             x_k = X_arr[k, :]
             u_k = U_arr[k, :]
 
-            if self.objective.n_in() == 4:
+            stage_cost = self.objective.stage_costs[k]
+            if stage_cost.has_reference:
                 assert X_ref_arr is not None
                 assert U_ref_arr is not None
-                cost_k = self.objective(x_k, u_k, X_ref_arr[k, :], U_ref_arr[k, :])
+                cost_k = stage_cost.f(x_k, u_k, X_ref_arr[k, :], U_ref_arr[k, :])
             else:
-                cost_k = self.objective(x_k, u_k)
+                cost_k = stage_cost.f(x_k, u_k)
             total_cost += float(cost_k)
 
         x_N = X_arr[self.N, :]
-        if self.terminal_objective is not None:
-            if self.terminal_objective.n_in() == 2:
+        if self.objective.terminal_cost is not None:
+            if self.objective.terminal_cost.has_reference:
                 assert X_ref_arr is not None
-                cost_N = self.terminal_objective(x_N, X_ref_arr[self.N, :])
+                cost_N = self.objective.terminal_cost.f(x_N, X_ref_arr[self.N, :])
             else:
-                cost_N = self.terminal_objective(x_N)
+                cost_N = self.objective.terminal_cost.f(x_N)
             total_cost += float(cost_N)
 
         return total_cost

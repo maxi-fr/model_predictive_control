@@ -4,6 +4,7 @@ import pytest
 
 from model_predictive_control.constraints import ConstraintList, ControlConstraint
 from model_predictive_control.mpc import MPC, LinearMPC
+from model_predictive_control.objective import CostFunction, Objective
 from model_predictive_control.ocp import OCP, LinearOCP, rk4_integrator
 
 
@@ -20,16 +21,18 @@ def setup_simple_ocp() -> OCP:
     dyn = ca.vertcat(x[1], u[0])
     dynamics = ca.Function("dyn", [x, u], [dyn])
 
-    obj = x[0] ** 2 + x[1] ** 2 + u[0] ** 2
-    objective = ca.Function("obj", [x, u], [obj])
+    obj_func = x[0] ** 2 + x[1] ** 2 + u[0] ** 2
+    term_obj_func = 10 * (x[0] ** 2 + x[1] ** 2)
+    objective = Objective(
+        CostFunction(ca.Function("obj", [x, u], [obj_func])),
+        CostFunction(ca.Function("term_obj", [x], [term_obj_func])),
+        N,
+    )
 
     ineq = u[0] ** 2 - 1.0
     in_eq_constraints = ca.Function("ineq", [u], [ineq])
     cl = ConstraintList()
     cl.add(ControlConstraint(in_eq_constraints), range(N))
-
-    term_obj = 10 * (x[0] ** 2 + x[1] ** 2)
-    terminal_objective = ca.Function("term_obj", [x], [term_obj])
 
     return OCP(
         N=N,
@@ -37,7 +40,6 @@ def setup_simple_ocp() -> OCP:
         objective=objective,
         dynamics=dynamics,
         constraints=cl,
-        terminal_objective=terminal_objective,
     )
 
 
