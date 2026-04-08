@@ -138,6 +138,173 @@ class ControlConstraint(Constraint):
             raise ValueError(msg)
 
 
+class StateBoundConstraint(StateConstraint):
+    """State bounds constraint: x_min <= x <= x_max."""
+
+    def __init__(self, x_min: ArrayLike, x_max: ArrayLike) -> None:
+        """
+        Initialize the state bound constraint.
+
+        Parameters
+        ----------
+            x_min: Lower bounds array for states.
+            x_max: Upper bounds array for states.
+        """
+        self.x_min = np.asarray(x_min, dtype=float)
+        self.x_max = np.asarray(x_max, dtype=float)
+
+        if self.x_min.shape != self.x_max.shape:
+            msg = "x_min and x_max must have the same shape."
+            raise ValueError(msg)
+
+        nx = self.x_min.shape[0]
+        x_sym = ca.MX.sym("x", nx)
+
+        f_val = ca.vertcat(self.x_min - x_sym, x_sym - self.x_max)
+        f_func = ca.Function("state_bounds", [x_sym], [f_val])
+
+        super().__init__(f=f_func, is_equality=False)
+
+
+class ControlBoundConstraint(ControlConstraint):
+    """Control bounds constraint: u_min <= u <= u_max."""
+
+    def __init__(self, u_min: ArrayLike, u_max: ArrayLike) -> None:
+        """
+        Initialize the control bound constraint.
+
+        Parameters
+        ----------
+            u_min: Lower bounds array for controls.
+            u_max: Upper bounds array for controls.
+        """
+        self.u_min = np.asarray(u_min, dtype=float)
+        self.u_max = np.asarray(u_max, dtype=float)
+
+        if self.u_min.shape != self.u_max.shape:
+            msg = "u_min and u_max must have the same shape."
+            raise ValueError(msg)
+
+        nu = self.u_min.shape[0]
+        u_sym = ca.MX.sym("u", nu)
+
+        f_val = ca.vertcat(self.u_min - u_sym, u_sym - self.u_max)
+        f_func = ca.Function("control_bounds", [u_sym], [f_val])
+
+        super().__init__(f=f_func, is_equality=False)
+
+
+class SphereConstraint(StateConstraint):
+    """Sphere constraint: ||x[indices] - center||^2 <= radius^2 or >= radius^2."""
+
+    def __init__(
+        self,
+        center: ArrayLike,
+        radius: float,
+        indices: list[int] | slice,
+        nx: int,
+        keepout: bool = False,
+    ) -> None:
+        """
+        Initialize the sphere constraint.
+
+        Parameters
+        ----------
+            center: Center of the sphere.
+            radius: Radius of the sphere.
+            indices: Indices of the state vector to apply the constraint to.
+            nx: Number of states (needed to create the symbolic variable).
+            keepout: If True, evaluates to radius^2 - ||x[indices] - center||^2 <= 0 (obstacle avoidance).
+                     If False, evaluates to ||x[indices] - center||^2 - radius^2 <= 0 (containment).
+        """
+        self.center = np.asarray(center, dtype=float)
+        self.radius = float(radius)
+        self.keepout = keepout
+
+        x_sym = ca.MX.sym("x", nx)
+        x_sub = x_sym[indices]
+
+        if x_sub.shape[0] != self.center.shape[0]:
+            msg = "Center dimension must match the number of specified indices."
+            raise ValueError(msg)
+
+        diff = x_sub - self.center
+        sq_dist = ca.sumsqr(diff)
+
+        # radius^2 <= sq_dist  =>  radius^2 - sq_dist <= 0
+        # sq_dist <= radius^2  =>  sq_dist - radius^2 <= 0
+        f_val = self.radius**2 - sq_dist if keepout else sq_dist - self.radius**2
+
+        f_func = ca.Function("sphere_constraint", [x_sym], [f_val])
+        super().__init__(f=f_func, is_equality=False)
+
+
+class StateNormConstraint(StateConstraint):
+    """State norm constraint: ||x[indices]||_p <= max_norm."""
+
+    def __init__(self, max_norm: float, indices: list[int] | slice, nx: int, p: int = 2) -> None:
+        """
+        Initialize the state norm constraint.
+
+        Parameters
+        ----------
+            max_norm: Maximum allowed norm.
+            indices: Indices of the state vector to apply the constraint to.
+            nx: Number of states (needed to create the symbolic variable).
+            p: The order of the norm (default is 2).
+        """
+        self.max_norm = float(max_norm)
+        self.p = p
+
+        x_sym = ca.MX.sym("x", nx)
+        x_sub = x_sym[indices]
+
+        if p == 2:
+            norm = ca.norm_2(x_sub)
+        elif p == 1:
+            norm = ca.norm_1(x_sub)
+        else:
+            msg = f"Norm of order {p} is not natively supported by CasADi helper functions."
+            raise ValueError(msg)
+
+        f_val = norm - self.max_norm
+        f_func = ca.Function("state_norm", [x_sym], [f_val])
+        super().__init__(f=f_func, is_equality=False)
+
+
+class ControlNormConstraint(ControlConstraint):
+    """Control norm constraint: ||u[indices]||_p <= max_norm."""
+
+    def __init__(self, max_norm: float, indices: list[int] | slice, nu: int, p: int = 2) -> None:
+        """
+        Initialize the control norm constraint.
+
+        Parameters
+        ----------
+            max_norm: Maximum allowed norm.
+            indices: Indices of the control vector to apply the constraint to.
+            nu: Number of controls (needed to create the symbolic variable).
+            p: The order of the norm (default is 2).
+        """
+        self.max_norm = float(max_norm)
+        self.p = p
+
+        u_sym = ca.MX.sym("u", nu)
+        u_sub = u_sym[indices]
+
+        if p == 2:
+            norm = ca.norm_2(u_sub)
+        elif p == 1:
+            norm = ca.norm_1(u_sub)
+        else:
+            msg = f"Norm of order {p} is not natively supported by CasADi helper functions."
+            raise ValueError(msg)
+
+        f_val = norm - self.max_norm
+        f_func = ca.Function("control_norm", [u_sym], [f_val])
+        super().__init__(f=f_func, is_equality=False)
+
+
 class LinearConstraint(BaseConstraint):
     """Constraint wrapping F*x + G*u <= h or == h."""
 
