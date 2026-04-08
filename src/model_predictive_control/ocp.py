@@ -761,77 +761,6 @@ class OCP:  # noqa: D101 TODO: add doc string
         return total_cost
 
 
-def quadratic_objective(  # noqa: D103, TODO: fix D103
-    Q: np.ndarray, R: np.ndarray, q: np.ndarray | None = None, r: np.ndarray | None = None, N: np.ndarray | None = None
-) -> Function:
-    nx = Q.shape[0]
-    nu = R.shape[0]
-    x = ca.MX.sym("x", nx)
-    u = ca.MX.sym("u", nu)
-
-    if q is None:
-        q = np.zeros((nx, 1))
-    if r is None:
-        r = np.zeros((nu, 1))
-    if N is None:
-        N = np.zeros((nx, nu))
-
-    if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
-        msg = "Matrix Q must be square and match state dimension."
-        raise ValueError(msg)
-    if R.shape[0] != R.shape[1] or R.shape[0] != nu:
-        msg = "Matrix R must be square and match control dimension."
-        raise ValueError(msg)
-    if q.shape[0] != nx:
-        msg = "Vector q must match state dimension."
-        raise ValueError(msg)
-    if r.shape[0] != nu:
-        msg = "Vector r must match control dimension."
-        raise ValueError(msg)
-    if N.shape[0] != nx or N.shape[1] != nu:
-        msg = "Matrix N must match state and control dimensions."
-        raise ValueError(msg)
-
-    return ca.Function(
-        "quadr_obj", [x, u], [x.T @ Q @ x + x.T @ q + u.T @ R @ u + u.T @ r + x.T @ N @ u], ["x", "u"], ["f"]
-    )
-
-
-def lqr_objective(  # noqa: D103, TODO: fix D103
-    Q: np.ndarray, R: np.ndarray, N: np.ndarray | None = None
-) -> Function:
-    nx = Q.shape[0]
-    nu = R.shape[0]
-    x = ca.MX.sym("x", nx)
-    u = ca.MX.sym("u", nu)
-    x_ref = ca.MX.sym("x_ref", nx)
-    u_ref = ca.MX.sym("u_ref", nu)
-
-    if N is None:
-        N = np.zeros((nx, nu))
-
-    if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
-        msg = "Matrix Q must be square and match state dimension."
-        raise ValueError(msg)
-    if R.shape[0] != R.shape[1] or R.shape[0] != nu:
-        msg = "Matrix R must be square and match control dimension."
-        raise ValueError(msg)
-    if N.shape[0] != nx or N.shape[1] != nu:
-        msg = "Matrix N must match state and control dimensions."
-        raise ValueError(msg)
-
-    dx = x - x_ref
-    du = u - u_ref
-
-    return ca.Function(
-        "lqr_obj",
-        [x, u, x_ref, u_ref],
-        [dx.T @ Q @ dx + du.T @ R @ du + dx.T @ N @ du],
-        ["x", "u", "x_ref", "u_ref"],
-        ["f"],
-    )
-
-
 def linear_constraints(F: np.ndarray, G: np.ndarray, h: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
     nx = F.shape[1]
     nu = G.shape[1]
@@ -885,36 +814,6 @@ def control_bounds_constraints(u_min: np.ndarray, u_max: np.ndarray, nx: int) ->
     u = ca.MX.sym("u", nu)
 
     return ca.Function("control_bounds", [x, u], [ca.vertcat(u_min - u, u - u_max)], ["x", "u"], ["f"])
-
-
-def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
-    nx = Q.shape[0]
-
-    if Q.shape[1] != nx:
-        msg = "Matrix Q must be square."
-        raise ValueError(msg)
-    if q.shape[0] != nx:
-        msg = "Vector q must have the same length as Q."
-        raise ValueError(msg)
-
-    x = ca.MX.sym("x", nx)
-
-    return ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
-
-
-def terminal_lqr_objective(Q: np.ndarray) -> Function:  # noqa: D103   TODO: fix
-    nx = Q.shape[0]
-
-    if Q.shape[1] != nx:
-        msg = "Matrix Q must be square."
-        raise ValueError(msg)
-
-    x = ca.MX.sym("x", nx)
-    x_ref = ca.MX.sym("x_ref", nx)
-
-    dx = x - x_ref
-
-    return ca.Function("term_lqr_obj", [x, x_ref], [dx.T @ Q @ dx], ["x", "x_ref"], ["f"])
 
 
 def terminal_linear_constraints(F: np.ndarray, h: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103

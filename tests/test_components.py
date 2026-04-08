@@ -1,13 +1,13 @@
 import numpy as np
 import pytest
 
+from model_predictive_control.objective import TerminalQuadraticCost
 from model_predictive_control.ocp import (
     control_bounds_constraints,
     linear_constraints,
     linear_dynamics,
     state_bounds_constraints,
     terminal_linear_constraints,
-    terminal_quadratic_objective,
 )
 
 
@@ -72,12 +72,12 @@ def test_terminal_quadratic_objective() -> None:
     Q = np.array([[1, 0], [0, 1]])
     q = np.array([[0], [0]])
 
-    func = terminal_quadratic_objective(Q, q)
+    func = TerminalQuadraticCost(Q, q).f
     assert func.size_in(0) == (2, 1)  # nx
     assert func.size_out(0) == (1, 1)  # out
 
     with pytest.raises(ValueError):
-        terminal_quadratic_objective(np.array([[1]]), q)
+        TerminalQuadraticCost(np.array([[1]]), q)
 
 
 def test_terminal_linear_constraints() -> None:

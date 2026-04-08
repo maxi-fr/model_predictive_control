@@ -4,13 +4,6 @@ from typing import Any
 import casadi as ca
 import numpy as np
 
-from model_predictive_control.ocp import (
-    lqr_objective,
-    quadratic_objective,
-    terminal_lqr_objective,
-    terminal_quadratic_objective,
-)
-
 
 class CostFunction:
     """Base class for cost functions."""
@@ -55,7 +48,36 @@ class LQRCost(CostFunction):
     """LQR Stage Cost."""
 
     def __init__(self, Q: np.ndarray, R: np.ndarray, N_cross: np.ndarray | None = None) -> None:
-        f = lqr_objective(Q, R, N_cross)
+        nx = Q.shape[0]
+        nu = R.shape[0]
+        x = ca.MX.sym("x", nx)
+        u = ca.MX.sym("u", nu)
+        x_ref = ca.MX.sym("x_ref", nx)
+        u_ref = ca.MX.sym("u_ref", nu)
+
+        if N_cross is None:
+            N_cross = np.zeros((nx, nu))
+
+        if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
+            msg = "Matrix Q must be square and match state dimension."
+            raise ValueError(msg)
+        if R.shape[0] != R.shape[1] or R.shape[0] != nu:
+            msg = "Matrix R must be square and match control dimension."
+            raise ValueError(msg)
+        if N_cross.shape[0] != nx or N_cross.shape[1] != nu:
+            msg = "Matrix N_cross must match state and control dimensions."
+            raise ValueError(msg)
+
+        dx = x - x_ref
+        du = u - u_ref
+
+        f = ca.Function(
+            "lqr_obj",
+            [x, u, x_ref, u_ref],
+            [dx.T @ Q @ dx + du.T @ R @ du + dx.T @ N_cross @ du],
+            ["x", "u", "x_ref", "u_ref"],
+            ["f"],
+        )
         super().__init__(f)
 
 
@@ -63,7 +85,18 @@ class TerminalLQRCost(CostFunction):
     """LQR Terminal Cost."""
 
     def __init__(self, Q: np.ndarray) -> None:
-        f = terminal_lqr_objective(Q)
+        nx = Q.shape[0]
+
+        if Q.shape[1] != nx:
+            msg = "Matrix Q must be square."
+            raise ValueError(msg)
+
+        x = ca.MX.sym("x", nx)
+        x_ref = ca.MX.sym("x_ref", nx)
+
+        dx = x - x_ref
+
+        f = ca.Function("term_lqr_obj", [x, x_ref], [dx.T @ Q @ dx], ["x", "x_ref"], ["f"])
         super().__init__(f)
         self._has_reference = True
 
@@ -79,7 +112,37 @@ class QuadraticCost(CostFunction):
         r: np.ndarray | None = None,
         N_cross: np.ndarray | None = None,
     ) -> None:
-        f = quadratic_objective(Q, R, q, r, N_cross)
+        nx = Q.shape[0]
+        nu = R.shape[0]
+        x = ca.MX.sym("x", nx)
+        u = ca.MX.sym("u", nu)
+
+        if q is None:
+            q = np.zeros((nx, 1))
+        if r is None:
+            r = np.zeros((nu, 1))
+        if N_cross is None:
+            N_cross = np.zeros((nx, nu))
+
+        if Q.shape[0] != Q.shape[1] or Q.shape[0] != nx:
+            msg = "Matrix Q must be square and match state dimension."
+            raise ValueError(msg)
+        if R.shape[0] != R.shape[1] or R.shape[0] != nu:
+            msg = "Matrix R must be square and match control dimension."
+            raise ValueError(msg)
+        if q.shape[0] != nx:
+            msg = "Vector q must match state dimension."
+            raise ValueError(msg)
+        if r.shape[0] != nu:
+            msg = "Vector r must match control dimension."
+            raise ValueError(msg)
+        if N_cross.shape[0] != nx or N_cross.shape[1] != nu:
+            msg = "Matrix N_cross must match state and control dimensions."
+            raise ValueError(msg)
+
+        f = ca.Function(
+            "quadr_obj", [x, u], [x.T @ Q @ x + x.T @ q + u.T @ R @ u + u.T @ r + x.T @ N_cross @ u], ["x", "u"], ["f"]
+        )
         super().__init__(f)
 
 
@@ -87,7 +150,18 @@ class TerminalQuadraticCost(CostFunction):
     """Quadratic Terminal Cost."""
 
     def __init__(self, Q: np.ndarray, q: np.ndarray) -> None:
-        f = terminal_quadratic_objective(Q, q)
+        nx = Q.shape[0]
+
+        if Q.shape[1] != nx:
+            msg = "Matrix Q must be square."
+            raise ValueError(msg)
+        if q.shape[0] != nx:
+            msg = "Vector q must have the same length as Q."
+            raise ValueError(msg)
+
+        x = ca.MX.sym("x", nx)
+
+        f = ca.Function("term_quadr_obj", [x], [x.T @ Q @ x + x.T @ q], ["x"], ["f"])
         super().__init__(f)
 
 
