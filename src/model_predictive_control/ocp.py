@@ -888,30 +888,6 @@ def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:  # noqa: D103, TO
     return ca.Function("lin_dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
 
 
-def state_bounds_constraints(x_min: np.ndarray, x_max: np.ndarray, nu: int) -> Function:  # noqa: D103, TODO: fix D103
-    nx = x_min.shape[0]
-    if x_max.shape[0] != nx:
-        msg = "x_min and x_max must have the same length."
-        raise ValueError(msg)
-
-    x = ca.MX.sym("x", nx)
-    u = ca.MX.sym("u", nu)
-
-    return ca.Function("state_bounds", [x, u], [ca.vertcat(x_min - x, x - x_max)], ["x", "u"], ["f"])
-
-
-def control_bounds_constraints(u_min: np.ndarray, u_max: np.ndarray, nx: int) -> Function:  # noqa: D103, TODO: fix D103
-    nu = u_min.shape[0]
-    if u_max.shape[0] != nu:
-        msg = "u_min and u_max must have the same length."
-        raise ValueError(msg)
-
-    x = ca.MX.sym("x", nx)
-    u = ca.MX.sym("u", nu)
-
-    return ca.Function("control_bounds", [x, u], [ca.vertcat(u_min - u, u - u_max)], ["x", "u"], ["f"])
-
-
 def terminal_quadratic_objective(Q: np.ndarray, q: np.ndarray) -> Function:  # noqa: D103, TODO: fix D103
     nx = Q.shape[0]
 
