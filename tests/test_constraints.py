@@ -69,7 +69,7 @@ def test_linear_constraint_validation() -> None:
 
     # Wrong F dims
     F_wrong_nx = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    with pytest.raises(ValueError, match="LinearConstraint F matrix last dimension must match state"):
+    with pytest.raises(ValueError, match="Constraint function inputs must match state"):
         LinearConstraint(h=h, F=F_wrong_nx, G=G).validate_dimensions(nx, nu)
 
     F_wrong_nc = np.array([[1.0, 0.0]])
@@ -78,7 +78,7 @@ def test_linear_constraint_validation() -> None:
 
     # Wrong G dims
     G_wrong_nu = np.array([[1.0, 1.0], [1.0, 1.0]])
-    with pytest.raises(ValueError, match="LinearConstraint G matrix last dimension must match control"):
+    with pytest.raises(ValueError, match="Constraint function inputs must match state"):
         LinearConstraint(h=h, F=F, G=G_wrong_nu).validate_dimensions(nx, nu)
 
     G_wrong_nc = np.array([[1.0]])

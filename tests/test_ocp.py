@@ -237,15 +237,15 @@ def test_linearize_method() -> None:
     assert isinstance(lin_c, LinearConstraint)
     assert lin_c.G is not None
     assert lin_c.h is not None
-    np.testing.assert_allclose(lin_c.G[0], np.array([[1.0]]), atol=1e-10)
-    np.testing.assert_allclose(lin_c.h[0], np.array([1.0]), atol=1e-10)
+    np.testing.assert_allclose(lin_c.G, np.array([[1.0]]), atol=1e-10)
+    np.testing.assert_allclose(lin_c.h, np.array([1.0]), atol=1e-10)
 
     lin_c = lin_ocp.constraints.constraints[0][0]
     assert isinstance(lin_c, LinearConstraint)
     assert lin_c.G is not None
     assert lin_c.h is not None
-    np.testing.assert_allclose(lin_c.G[0], np.array([[1.0]]), atol=1e-10)
-    np.testing.assert_allclose(lin_c.h[0], np.array([1.0]), atol=1e-10)
+    np.testing.assert_allclose(lin_c.G, np.array([[1.0]]), atol=1e-10)
+    np.testing.assert_allclose(lin_c.h, np.array([1.0]), atol=1e-10)
 
 
 def test_linearize_equivalence() -> None:

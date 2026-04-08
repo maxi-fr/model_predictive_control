@@ -25,12 +25,8 @@ import casadi as ca
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model_predictive_control.constraints import ConstraintList, Constraint, StateConstraint, ControlConstraint
-from model_predictive_control.ocp import (
-    OCP,
-    control_bounds_constraints,
-    state_bounds_constraints,
-)
+from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
+from model_predictive_control.ocp import OCP
 from model_predictive_control.objective import QuadraticObjective
 from model_predictive_control.plots import plot_controls, plot_states
 
@@ -128,13 +124,12 @@ x_min = np.array([-p_max_val, -inf, -inf, -inf])
 x_max = np.array([p_max_val, inf, inf, inf])
 
 # Create constraint functions
-state_bounds = state_bounds_constraints(x_min, x_max, nu)
-control_bounds = control_bounds_constraints(u_min, u_max, nx)
+state_bounds = StateBoundConstraint(x_min, x_max)
+control_bounds = ControlBoundConstraint(u_min, u_max)
 
-# Combine constraints: inequality constraints must return values <= 0
-in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
 cl = ConstraintList()
-cl.add(Constraint(in_eq_constraints), slice(None))
+cl.add(state_bounds, slice(None))
+cl.add(control_bounds, slice(None))
 
 
 # %% [markdown]
