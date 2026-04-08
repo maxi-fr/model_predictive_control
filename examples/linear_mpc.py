@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -12,38 +13,44 @@
 #     name: python3
 # ---
 
-# %% [markdown]
+# %%
+
 # # Closed-Loop Linear Model Predictive Control
 #
 # This notebook demonstrates a closed-loop Model Predictive Control (MPC) simulation for a simple unstable linear 2D system using the `LinearOCP` class, which uses a QP formulation.
 
 # %%
+
+
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model_predictive_control.constraints import ConstraintList
 from model_predictive_control.mpc import LinearMPC
 from model_predictive_control.ocp import LinearOCP
 from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
 
-# %% [markdown]
+
 # ## 1. Linear System Dynamics
 #
 # We define a generic unstable linear system $x_{k+1} = A x_k + B u_k$.
 
 # %%
+
+
 A = np.array([[1.0, 0.1], [0.5, 1.0]])
 B = np.array([[0.0], [0.1]])
 
 nx = A.shape[1]
 nu = B.shape[1]
 
-# %% [markdown]
+
 # ## 2. Objective Function and Constraints
 #
 # We use a standard quadratic objective to penalize state deviations and control effort, and box constraints for safety.
 
 # %%
+
+
 # Objective matrices
 Q = np.diag([100.0, 10.0])
 R = np.array([[0.1]])
@@ -85,18 +92,16 @@ x_max = np.array([x_max_val, x_max_val])
 u_min = np.array([-u_max_val])
 u_max = np.array([u_max_val])
 
-# %% [markdown]
+
 # ## 3. OCP Setup and Closed-Loop Simulation
 
 # %%
+
+
 N_horizon = 20
 N_sim = 40
 dt = 0.1
-from model_predictive_control.constraints import LinearConstraint
 
-cl = ConstraintList()
-cl.add(LinearConstraint(F=F, G=G, h=h), range(N_horizon))
-cl.add(LinearConstraint(F=F_term, h=h_term), [N_horizon])
 ocp = LinearOCP(
     N=N_horizon,
     dt=dt,
@@ -104,6 +109,11 @@ ocp = LinearOCP(
     B=B,
     Q=Q,
     R=R,
+    q=q,
+    r=r,
+    N_cross=N_cross,
+    Qf=Qf,
+    qf=q,
     constraints=cl,
 )
 
@@ -132,8 +142,6 @@ for k in range(N_sim):
 
     # Store predictions for plotting
     X_opt, U_opt = mpc.get_last_open_loop_predictions()
-    assert X_opt is not None
-    assert U_opt is not None
     X_open_loop[k, :, :] = X_opt
 
     # Apply control to system
@@ -147,13 +155,16 @@ for k in range(N_sim):
     current_x = x_next
 
     # Shift trajectories for next warm start
-    X_guess = np.vstack((X_opt[1:, :], X_opt[-1:, :]))
-    U_guess = np.vstack((U_opt[1:, :], U_opt[-1:, :]))
+    if X_opt is not None and U_opt is not None:
+        X_guess = np.vstack((X_opt[1:, :], X_opt[-1:, :]))
+        U_guess = np.vstack((U_opt[1:, :], U_opt[-1:, :]))
 
-# %% [markdown]
+
 # ## 4. Plot Results
 
 # %%
+
+
 time = np.arange(N_sim + 1) * dt
 
 fig, axs = plt.subplots(2, 1, figsize=(10, 8))

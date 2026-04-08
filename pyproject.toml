@@ -26,6 +26,10 @@ dev = [
     "pre-commit>=3.0.0",
     "mypy>=1.0.0",
     "validate-pyproject>=0.23",
+    "jupyter>=1.1.1",
+    "nbconvert>=7.17.1",
+    "nbqa>=1.9.1",
+    "jupytext==1.16.7",
 ]
 
 

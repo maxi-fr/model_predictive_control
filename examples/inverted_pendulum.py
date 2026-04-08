@@ -1,18 +1,20 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
 #       jupytext_version: 1.16.7
 #   kernelspec:
-#     display_name: .venv
+#     display_name: model-predictive-control (3.12.1)
 #     language: python
 #     name: python3
 # ---
 
-# %% [markdown]
+# %%
+
 # # Open-Loop Optimal Control for an Inverted Pendulum on a Cart
 #
 # This notebook demonstrates how to formulate and solve an open-loop optimal control problem (OCP) for an inverted pendulum on a cart using the `OCP` class from the `model_predictive_control` package.
@@ -21,16 +23,16 @@
 #
 
 # %%
+
+
 import casadi as ca
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
 from model_predictive_control.ocp import OCP
-from model_predictive_control.objective import QuadraticObjective
 from model_predictive_control.plots import plot_controls, plot_states
 
-# %% [markdown]
+
 # ## 1. System Dynamics
 #
 # We define the physical parameters of the inverted pendulum and derive the equations of motion using CasADi symbolic variables.
@@ -43,6 +45,8 @@ from model_predictive_control.plots import plot_controls, plot_states
 #
 
 # %%
+
+
 # Physical parameters
 M = 1.0  # Mass of the cart (kg)
 m = 0.1  # Mass of the pendulum (kg)
@@ -77,13 +81,14 @@ x_dot = ca.vertcat(v, p_ddot, omega, theta_ddot)
 dynamics = ca.Function("dynamics", [x, u], [x_dot])
 
 
-# %% [markdown]
 # ## 2. Objective Function
 #
 # We define a quadratic cost function to penalize deviation from the origin (upright position at the center) and control effort. We also define a terminal cost to ensure stability at the end of the horizon.
 #
 
 # %%
+
+
 # State cost matrix (penalize position, velocity, angle, angular velocity)
 Q = np.diag([10.0, 1.0, 10.0, 1.0])
 
@@ -95,23 +100,22 @@ q_term = np.zeros(nx)
 r_term = np.zeros(nu)
 N_cross = np.zeros((nx, nu))
 
+# Stage cost function using prebuilt component
+objective = quadratic_objective(Q, R, q_term, r_term, N_cross)
+
 # Terminal cost matrix (higher penalty for final state to ensure reaching the target)
 Qf = np.diag([100.0, 10.0, 100.0, 10.0])
-
-N = 100  # Number of intervals
-dt = 0.05  # Time step (s)
-
-# Stage cost function using prebuilt component
-objective = QuadraticObjective(Q, R, Qf, q_term, N, q_term, r_term, N_cross)
+terminal_objective = terminal_quadratic_objective(Qf, q_term)
 
 
-# %% [markdown]
 # ## 3. Constraints
 #
 # We add inequalities to restrict the control force and the cart's position so it stays within physical limits.
 #
 
 # %%
+
+
 # Control limits
 u_max_val = 20.0  # Maximum force (N)
 u_min = np.array([-u_max_val])
@@ -124,21 +128,25 @@ x_min = np.array([-p_max_val, -inf, -inf, -inf])
 x_max = np.array([p_max_val, inf, inf, inf])
 
 # Create constraint functions
-state_bounds = StateBoundConstraint(x_min, x_max)
-control_bounds = ControlBoundConstraint(u_min, u_max)
+state_bounds = state_bounds_constraints(x_min, x_max, nu)
+control_bounds = control_bounds_constraints(u_min, u_max, nx)
 
-cl = ConstraintList()
-cl.add(state_bounds, slice(None))
-cl.add(control_bounds, slice(None))
+# Combine constraints: inequality constraints must return values <= 0
+in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
 
 
-# %% [markdown]
 # ## 4. Problem Setup and Solving
 #
 # We configure the OCP using Hermite-Simpson direct collocation over a prediction horizon.
 #
 
 # %%
+
+
+# OCP configuration
+N = 100  # Number of intervals
+dt = 0.05  # Time step (s)
+
 # Initial state: Cart at origin, pendulum offset by 0.5 radians (~28.6 degrees)
 x0_val = np.array([0.0, 0.0, 0.5, 0.0])
 
@@ -148,7 +156,8 @@ ocp = OCP(
     dt=dt,
     objective=objective,
     dynamics=dynamics,
-    constraints=cl,
+    terminal_objective=terminal_objective,
+    in_eq_constraints=in_eq_constraints,
 )
 
 # Setup the problem formulation and solver
@@ -160,14 +169,14 @@ ocp.setup(
 X_opt, U_opt, status = ocp.solve(x0_val)
 
 
-
-# %% [markdown]
 # ## 5. Visualizing the Results
 #
 # Let's plot the optimal state and control trajectories to verify the performance.
 #
 
 # %%
+
+
 time = np.arange(0, N + 1) * dt
 
 fig, axs = plt.subplots(3, 1, figsize=(10, 8))

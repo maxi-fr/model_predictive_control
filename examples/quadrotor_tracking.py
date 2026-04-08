@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -12,7 +13,8 @@
 #     name: python3
 # ---
 
-# %% [markdown]
+# %%
+
 # # Open-Loop Optimal Control for a 3D Quadrotor Tracking an S-Shaped Trajectory
 #
 # This notebook demonstrates how to formulate and solve an open-loop optimal control problem (OCP) for a full 3D quadrotor tracking a time-varying reference trajectory using the `OCP` class from the `model_predictive_control` package.
@@ -20,16 +22,22 @@
 # The quadrotor is modeled with 12 states (position, velocity, orientation, and angular rates) and 4 control inputs (individual motor thrusts).
 
 # %%
+
+
 import casadi as ca
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
-from model_predictive_control.ocp import OCP
-from model_predictive_control.objective import LQRObjective
+from model_predictive_control.ocp import (
+    OCP,
+    control_bounds_constraints,
+    lqr_objective,
+    state_bounds_constraints,
+    terminal_lqr_objective,
+)
 from model_predictive_control.plots import plot_controls, plot_states
 
-# %% [markdown]
+
 # ## 1. System Dynamics
 #
 # We define the physical parameters of the quadrotor and derive the non-linear 3D equations of motion.
@@ -45,6 +53,8 @@ from model_predictive_control.plots import plot_controls, plot_states
 #
 
 # %%
+
+
 # Physical parameters
 m = 1.0  # Mass (kg)
 g = 9.81  # Gravity (m/s^2)
@@ -121,12 +131,14 @@ omega_dot = inv_J @ (tau - ca.cross(omega, J @ omega))
 x_dot = ca.vertcat(v_vel, v_dot, eta_dot, omega_dot)
 dynamics = ca.Function("dynamics", [x, u], [x_dot])
 
-# %% [markdown]
+
 # ## 2. Reference Trajectory (S-Shape)
 #
 # We define an S-shaped trajectory for the quadrotor to track in the horizontal plane while maintaining a constant altitude. The quadrotor should maintain a zero yaw angle throughout the trajectory.
 
 # %%
+
+
 N = 50  # Horizon length
 dt = 0.1  # Time step (s)
 T_final = N * dt
@@ -161,12 +173,14 @@ for k in range(N + 1):
 for k in range(N):
     U_ref[k, :] = hover_thrust
 
-# %% [markdown]
+
 # ## 3. Objective and Constraints
 #
 # We use tracking objectives to penalize deviation from `X_ref` and `U_ref`. We also limit thrust and orientations.
 
 # %%
+
+
 # State weights
 Q_diag = [
     100.0,
@@ -187,10 +201,11 @@ Q = np.diag(Q_diag)
 # Control weights (penalize deviation from hover thrust)
 R = np.diag([1.0, 1.0, 1.0, 1.0])
 
+objective = lqr_objective(Q, R)
+
 # Terminal state weights
 Qf = Q * 5.0
-
-objective = LQRObjective(Q, R, Qf, N)
+terminal_objective = terminal_lqr_objective(Qf)
 
 # Constraints
 # Control inputs limits
@@ -234,23 +249,24 @@ x_max = np.array(
     ]
 )
 
-state_bounds = StateBoundConstraint(x_min, x_max)
-control_bounds = ControlBoundConstraint(u_min, u_max)
+state_bounds = state_bounds_constraints(x_min, x_max, nu)
+control_bounds = control_bounds_constraints(u_min, u_max, nx)
 
-cl = ConstraintList()
-cl.add(state_bounds, slice(None))
-cl.add(control_bounds, slice(None))
+in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
 
-# %% [markdown]
+
 # ## 4. Setup and Solve OCP
 
 # %%
+
+
 ocp = OCP(
     N=N,
     dt=dt,
     objective=objective,
     dynamics=dynamics,
-    constraints=cl,
+    in_eq_constraints=in_eq_constraints,
+    terminal_objective=terminal_objective,
 )
 
 ocp.setup(
@@ -265,10 +281,12 @@ X_opt, U_opt, status = ocp.solve(x0_val, X_guess=X_ref, U_guess=U_ref, x_ref=X_r
 
 print(f"\nSolver Status: {status}")
 
-# %% [markdown]
+
 # ## 5. Visualize Results
 
 # %%
+
+
 fig, axs = plt.subplots(3, 1, figsize=(10, 12))
 
 # Position X, Y, Z vs Reference
@@ -278,7 +296,7 @@ for idx, label in enumerate(["X [m]", "Y [m]", "Z [m]"]):
 axs[0].set_title("Position Tracking")
 axs[0].set_ylabel("Position")
 axs[0].legend(loc="upper left", bbox_to_anchor=(1, 1))
-axs[0].grid(True)
+axs[0].grid(grid=True)
 
 # Euler Angles
 plot_states(
