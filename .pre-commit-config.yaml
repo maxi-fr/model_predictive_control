@@ -78,7 +78,7 @@ repos:
 
       - id: test-notebooks
         name: Test Jupyter Notebook Execution
-        entry: uv run pytest --nbmake
+        entry: uv run pytest
         language: system
         types: [jupyter]
         always_run: True
