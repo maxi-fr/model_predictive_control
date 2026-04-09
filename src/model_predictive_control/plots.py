@@ -127,13 +127,15 @@ def plot_mpc_trajectories(  # noqa: PLR0913
     # Create a unified color cycle for states
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
+    relative_time = np.arange(N_horizon + 1) * dt
+
     for i, idx in enumerate(indices):
         color = colors[i % len(colors)]
 
         # Plot open-loop predictions first (so they are visually behind the closed-loop line)
         for k in range(0, N_sim, step_interval):
             # The prediction at step k corresponds to time range [time[k], time[k] + N_horizon * dt]
-            pred_time = time[k] + np.arange(N_horizon + 1) * dt
+            pred_time = time[k] + relative_time
 
             # Plot the prediction trace. Add label only on the first iteration to avoid legend duplication
             pred_trace = X_open_loop[k, :, idx] if X_open_loop.ndim == 3 else X_open_loop[k, :]
