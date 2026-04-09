@@ -18,6 +18,26 @@ repos:
     rev: 0.9.1
     hooks:
       - id: nbstripout
+
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.9.1
+    hooks:
+      - id: nbqa-ruff
+        name: Run Ruff on Notebooks
+        args: [--fix]
+        additional_dependencies: [ruff]
+      - id: nbqa-ruff-format
+        name: Format Notebooks with Ruff
+        additional_dependencies: [ruff]
+
+  - repo: https://github.com/mwouts/jupytext
+    rev: v1.16.1
+    hooks:
+      - id: jupytext
+        name: Generate Python scripts from notebooks
+        args: [--to, "py:percent"]
+        types: [jupyter]
+
   - repo: https://github.com/abravalheri/validate-pyproject
     rev: v0.25
     hooks:
@@ -28,18 +48,17 @@ repos:
     hooks:
       - id: ruff
         args: [ --fix ]
-        exclude: ^examples/.*\.py$
+        exclude: ^examples/
       - id: ruff-format
-        exclude: ^examples/.*\.py$
+        exclude: ^examples/
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    # uv version.
     rev: 0.11.3
     hooks:
-      # Update the requirements.txt if pyproject.toml changes
       - id: uv-export
         args: ["--frozen", "--output-file=requirements.txt", "--quiet"]
       - id: uv-lock
+
   - repo: local
     hooks:
       - id: pytest
@@ -51,14 +70,15 @@ repos:
 
       - id: mypy
         name: mypy
-        entry: uv run mypy .
+        entry: uv run mypy
         language: system
         types: [python]
-        pass_filenames: false
-        exclude: ^examples/.*\.py$
+        pass_filenames: true
+        exclude: ^examples/
 
       - id: test-notebooks
         name: Test Jupyter Notebook Execution
         entry: uv run pytest --nbmake
         language: system
         types: [jupyter]
+        always_run: True
