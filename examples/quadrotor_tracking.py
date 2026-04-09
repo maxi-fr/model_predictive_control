@@ -28,13 +28,9 @@ import casadi as ca
 import matplotlib.pyplot as plt
 import numpy as np
 
-from model_predictive_control.ocp import (
-    OCP,
-    control_bounds_constraints,
-    lqr_objective,
-    state_bounds_constraints,
-    terminal_lqr_objective,
-)
+from model_predictive_control.ocp import OCP
+from model_predictive_control.objective import LQRObjective
+from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
 from model_predictive_control.plots import plot_controls, plot_states
 
 
@@ -201,11 +197,12 @@ Q = np.diag(Q_diag)
 # Control weights (penalize deviation from hover thrust)
 R = np.diag([1.0, 1.0, 1.0, 1.0])
 
-objective = lqr_objective(Q, R)
-
 # Terminal state weights
 Qf = Q * 5.0
-terminal_objective = terminal_lqr_objective(Qf)
+
+N = 50
+
+objective = LQRObjective(Q, R, Qf, N)
 
 # Constraints
 # Control inputs limits
@@ -249,10 +246,12 @@ x_max = np.array(
     ]
 )
 
-state_bounds = state_bounds_constraints(x_min, x_max, nu)
-control_bounds = control_bounds_constraints(u_min, u_max, nx)
+state_bounds = StateBoundConstraint(x_min, x_max)
+control_bounds = ControlBoundConstraint(u_min, u_max)
 
-in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
+cl = ConstraintList()
+cl.add(state_bounds, slice(None))
+cl.add(control_bounds, slice(0, N))
 
 
 # ## 4. Setup and Solve OCP
@@ -265,8 +264,8 @@ ocp = OCP(
     dt=dt,
     objective=objective,
     dynamics=dynamics,
-    in_eq_constraints=in_eq_constraints,
-    terminal_objective=terminal_objective,
+    constraints=cl,
+
 )
 
 ocp.setup(
@@ -296,7 +295,7 @@ for idx, label in enumerate(["X [m]", "Y [m]", "Z [m]"]):
 axs[0].set_title("Position Tracking")
 axs[0].set_ylabel("Position")
 axs[0].legend(loc="upper left", bbox_to_anchor=(1, 1))
-axs[0].grid(grid=True)
+axs[0].grid(True)
 
 # Euler Angles
 plot_states(

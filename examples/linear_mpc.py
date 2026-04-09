@@ -102,6 +102,12 @@ N_horizon = 20
 N_sim = 40
 dt = 0.1
 
+from model_predictive_control.constraints import ConstraintList, LinearConstraint, TerminalLinearConstraint
+
+cl = ConstraintList()
+cl.add(LinearConstraint(F=F, G=G, h=h, nx=nx, nu=nu), slice(0, N_horizon))
+cl.add(TerminalLinearConstraint(F=F_term, h=h_term), [N_horizon])
+
 ocp = LinearOCP(
     N=N_horizon,
     dt=dt,

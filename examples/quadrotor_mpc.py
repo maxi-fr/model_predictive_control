@@ -31,11 +31,8 @@ from numpy.typing import ArrayLike
 
 from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
 from model_predictive_control.mpc import MPC
-from model_predictive_control.ocp import (
-    OCP,
-    lqr_objective,
-    terminal_lqr_objective,
-)
+from model_predictive_control.ocp import OCP
+from model_predictive_control.objective import LQRObjective
 from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
 
 
@@ -138,10 +135,10 @@ Q_diag = [
 Q = np.diag(Q_diag)
 R = np.diag([1.0, 1.0, 1.0, 1.0])
 
-objective = lqr_objective(Q, R)
-
 Qf = Q * 5.0
-terminal_objective = terminal_lqr_objective(Qf)
+N = 40
+
+objective = LQRObjective(Q, R, Qf, N)
 
 u_min_val = 0.0
 u_max_val = 3.0
@@ -156,7 +153,7 @@ state_bounds = StateBoundConstraint(x_min, x_max)
 control_bounds = ControlBoundConstraint(u_min, u_max)
 cl = ConstraintList()
 cl.add(state_bounds, slice(None))
-cl.add(control_bounds, slice(None))
+cl.add(control_bounds, slice(0, N))
 
 
 # ## 3. Reference Trajectory and MPC Setup
@@ -198,7 +195,7 @@ ocp = OCP(
     objective=objective,
     dynamics=dynamics,
     constraints=cl,
-    terminal_objective=terminal_objective,
+
 )
 
 setup_args = {
@@ -226,14 +223,15 @@ X_closed_loop[0, :] = x_current
 
 # Use a discrete-time integration scheme (RK4) for the "true" plant
 def rk4_step(
-    dyn_func: Callable[[ArrayLike, ArrayLike], ArrayLike], x: ArrayLike, u: ArrayLike, dt: float
+    dyn_func: ca.Function, x: ArrayLike, u: ArrayLike, dt: float
 ) -> np.ndarray:
     """Calculate the next state using an RK4 scheme."""
-    k1 = np.array(dyn_func(x, u)).flatten()
-    k2 = np.array(dyn_func(x + dt / 2 * k1, u)).flatten()
-    k3 = np.array(dyn_func(x + dt / 2 * k2, u)).flatten()
-    k4 = np.array(dyn_func(x + dt * k3, u)).flatten()
-    return x + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+    x_arr = np.asarray(x, dtype=float)
+    k1 = np.array(dyn_func(x_arr, u)).flatten()
+    k2 = np.array(dyn_func(x_arr + dt / 2 * k1, u)).flatten()
+    k3 = np.array(dyn_func(x_arr + dt / 2 * k2, u)).flatten()
+    k4 = np.array(dyn_func(x_arr + dt * k3, u)).flatten()
+    return np.array(x_arr + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4), dtype=float)
 
 
 print("Running MPC closed-loop simulation...")
@@ -274,7 +272,7 @@ for idx, label in enumerate(["X [m]", "Y [m]", "Z [m]"]):
 axs[0].set_title("Position Tracking")
 axs[0].set_ylabel("Position")
 axs[0].legend(loc="upper right", ncol=3)
-axs[0].grid(grid=True)
+axs[0].grid(True)
 
 # Euler Angles with open-loop predictions
 plot_mpc_trajectories(

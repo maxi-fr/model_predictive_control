@@ -30,6 +30,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from model_predictive_control.ocp import OCP
+from model_predictive_control.objective import QuadraticObjective
+from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
 from model_predictive_control.plots import plot_controls, plot_states
 
 
@@ -100,12 +102,14 @@ q_term = np.zeros(nx)
 r_term = np.zeros(nu)
 N_cross = np.zeros((nx, nu))
 
-# Stage cost function using prebuilt component
-objective = quadratic_objective(Q, R, q_term, r_term, N_cross)
-
 # Terminal cost matrix (higher penalty for final state to ensure reaching the target)
 Qf = np.diag([100.0, 10.0, 100.0, 10.0])
-terminal_objective = terminal_quadratic_objective(Qf, q_term)
+N = 100
+dt = 0.05
+
+# Stage cost function using prebuilt component
+objective = QuadraticObjective(Q, R, Qf, q_term, N, q_term, r_term, N_cross)
+
 
 
 # ## 3. Constraints
@@ -128,11 +132,13 @@ x_min = np.array([-p_max_val, -inf, -inf, -inf])
 x_max = np.array([p_max_val, inf, inf, inf])
 
 # Create constraint functions
-state_bounds = state_bounds_constraints(x_min, x_max, nu)
-control_bounds = control_bounds_constraints(u_min, u_max, nx)
+state_bounds = StateBoundConstraint(x_min, x_max)
+control_bounds = ControlBoundConstraint(u_min, u_max)
 
 # Combine constraints: inequality constraints must return values <= 0
-in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u), control_bounds(x, u))])
+cl = ConstraintList()
+cl.add(state_bounds, slice(None))
+cl.add(control_bounds, slice(0, N))
 
 
 # ## 4. Problem Setup and Solving
@@ -144,8 +150,7 @@ in_eq_constraints = ca.Function("in_eq", [x, u], [ca.vertcat(state_bounds(x, u),
 
 
 # OCP configuration
-N = 100  # Number of intervals
-dt = 0.05  # Time step (s)
+
 
 # Initial state: Cart at origin, pendulum offset by 0.5 radians (~28.6 degrees)
 x0_val = np.array([0.0, 0.0, 0.5, 0.0])
@@ -156,8 +161,8 @@ ocp = OCP(
     dt=dt,
     objective=objective,
     dynamics=dynamics,
-    terminal_objective=terminal_objective,
-    in_eq_constraints=in_eq_constraints,
+
+    constraints=cl,
 )
 
 # Setup the problem formulation and solver
