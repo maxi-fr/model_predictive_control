@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from model_predictive_control.constraints import ConstraintList, ControlConstraint
+from model_predictive_control.dynamics import Dynamics, LinearDynamics
 from model_predictive_control.mpc import MPC, LinearMPC
 from model_predictive_control.objective import CostFunction, Objective
 from model_predictive_control.ocp import OCP, LinearOCP, rk4_integrator
@@ -19,7 +20,7 @@ def setup_simple_ocp() -> OCP:
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
     dyn = ca.vertcat(x[1], u[0])
-    dynamics = ca.Function("dyn", [x, u], [dyn])
+    dynamics = Dynamics(ca.Function("dyn", [x, u], [dyn]))
 
     obj_func = x[0] ** 2 + x[1] ** 2 + u[0] ** 2
     term_obj_func = 10 * (x[0] ** 2 + x[1] ** 2)
@@ -107,7 +108,7 @@ def setup_simple_linear_ocp() -> LinearOCP:
     Q = np.eye(2) * 10
     R = np.eye(1)
 
-    return LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R)
+    return LinearOCP(N=5, dt=0.1, dynamics=LinearDynamics(A, B), Q=Q, R=R)
 
 
 def test_linear_mpc_initialization() -> None:
@@ -154,7 +155,7 @@ def test_linear_mpc_tracking() -> None:
     Q = np.eye(2) * 10
     R = np.eye(1)
 
-    ocp = LinearOCP(N=5, dt=0.1, A=A, B=B, Q=Q, R=R)
+    ocp = LinearOCP(N=5, dt=0.1, dynamics=LinearDynamics(A, B), Q=Q, R=R)
     setup_args = {
         "method": "multiple_shooting",
         "dynamics_type": "discrete",

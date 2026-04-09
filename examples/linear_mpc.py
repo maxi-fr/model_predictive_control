@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.7
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: model-predictive-control (3.12.1)
 #     language: python
@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from model_predictive_control.constraints import ConstraintList
+from model_predictive_control.dynamics import LinearDynamics
 from model_predictive_control.mpc import LinearMPC
 from model_predictive_control.ocp import LinearOCP
 from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
@@ -100,8 +101,7 @@ cl.add(LinearConstraint(F=F_term, h=h_term), [N_horizon])
 ocp = LinearOCP(
     N=N_horizon,
     dt=dt,
-    A=A,
-    B=B,
+    dynamics=LinearDynamics(A, B),
     Q=Q,
     R=R,
     constraints=cl,
