@@ -6,7 +6,6 @@ import casadi as ca
 import numpy as np
 import numpy.typing as npt
 import scipy.linalg
-from casadi.casadi import Function
 from numpy._typing import ArrayLike
 
 from model_predictive_control.constraints import (
@@ -20,6 +19,7 @@ from model_predictive_control.constraints import (
 
 if TYPE_CHECKING:
     import model_predictive_control.objective as objective_mod
+from model_predictive_control.dynamics import Dynamics, LinearDynamics
 
 
 class OCP:
@@ -36,7 +36,7 @@ class OCP:
         N: int,
         dt: float,
         objective: "objective_mod.Objective",
-        dynamics: ca.Function,
+        dynamics: "Dynamics",
         constraints: ConstraintList | None = None,
     ) -> None:
         self.N = N
@@ -58,15 +58,15 @@ class OCP:
 
     def validate_dimensions(self) -> tuple[int, int]:
         """Validate all casadi functions and returns nx and nu."""
-        if self.dynamics.n_in() < 2:
+        if self.dynamics.f.n_in() < 2:
             msg = "Dynamics function must take at least two arguments (state x and control u)."
             raise ValueError(msg)
 
-        nx = self.dynamics.size_in(0)[0]
-        nu = self.dynamics.size_in(1)[0]
+        nx = self.dynamics.f.size_in(0)[0]
+        nu = self.dynamics.f.size_in(1)[0]
 
-        if self.dynamics.size_out(0)[0] != nx:
-            msg = f"Dynamics function output size ({self.dynamics.size_out(0)[0]}) must match state size ({nx})."
+        if self.dynamics.f.size_out(0)[0] != nx:
+            msg = f"Dynamics function output size ({self.dynamics.f.size_out(0)[0]}) must match state size ({nx})."
             raise ValueError(msg)
 
         self.objective.validate_dimensions(nx, nu)
@@ -390,8 +390,7 @@ class OCP:
         return LinearOCP(
             N=N,
             dt=self.dt,
-            A=A,
-            B=B,
+            dynamics=LinearDynamics(A, B),
             Q=Q,
             R=R,
             q=q,
@@ -774,34 +773,6 @@ class OCP:
         return total_cost
 
 
-def linear_dynamics(A: np.ndarray, B: np.ndarray) -> Function:
-    """
-    Create a CasADi function for linear dynamics x_{k+1} = A x_k + B u_k.
-
-    Parameters
-    ----------
-        A: State transition matrix.
-        B: Control input matrix.
-
-    Returns
-    -------
-        CasADi function representing the linear dynamics.
-    """
-    nx = A.shape[1]
-    nu = B.shape[1]
-
-    if A.shape[0] != nx:
-        msg = "Matrix A must be square."
-        raise ValueError(msg)
-    if B.shape[0] != nx:
-        msg = "Matrix B must have the same number of rows as A."
-        raise ValueError(msg)
-
-    x = ca.MX.sym("x", nx)
-    u = ca.MX.sym("u", nu)
-
-    return ca.Function("lin_dyn", [x, u], [A @ x + B @ u], ["x", "u"], ["f"])
-
 
 class LinearOCP:
     """
@@ -813,13 +784,11 @@ class LinearOCP:
 
     The dynamics are linear: x_{k+1} = A_k x_k + B_k u_k.
     """
-
     def __init__(  # noqa: PLR0913
         self,
         N: int,
         dt: float,
-        A: np.ndarray,
-        B: np.ndarray,
+        dynamics: "LinearDynamics",
         Q: np.ndarray,
         R: np.ndarray,
         q: np.ndarray | None = None,
@@ -839,8 +808,8 @@ class LinearOCP:
         self.N = N
         self.dt = dt
 
-        self.A = np.asarray(A, dtype=float)
-        self.B = np.asarray(B, dtype=float)
+        self.A = dynamics.A
+        self.B = dynamics.B
 
         self.nx = self.A.shape[-1]
         self.nu = self.B.shape[-1]
@@ -1448,7 +1417,7 @@ class LinearOCP:
         return total_cost
 
 
-def rk4_integrator(dynamics: ca.Function, dt: float) -> ca.Function:
+def rk4_integrator(dynamics: "Dynamics", dt: float) -> ca.Function:
     """
     Implement a 4th-order Runge-Kutta integrator for continuous-time dynamics.
 
@@ -1461,8 +1430,8 @@ def rk4_integrator(dynamics: ca.Function, dt: float) -> ca.Function:
     -------
         CasADi function representing the discretized dynamics.
     """
-    nx = dynamics.size_in(0)[0]
-    nu = dynamics.size_in(1)[0]
+    nx = dynamics.f.size_in(0)[0]
+    nu = dynamics.f.size_in(1)[0]
     X0 = ca.MX.sym("X0", nx)
     U0 = ca.MX.sym("U0", nu)
     k1 = dynamics(X0, U0)
@@ -1473,7 +1442,7 @@ def rk4_integrator(dynamics: ca.Function, dt: float) -> ca.Function:
     return ca.Function("dyn_rk4", [X0, U0], [X_next])
 
 
-def euler_integrator(dynamics: ca.Function, dt: float) -> ca.Function:
+def euler_integrator(dynamics: "Dynamics", dt: float) -> ca.Function:
     """
     Implement a forward Euler integrator for continuous-time dynamics.
 
@@ -1486,8 +1455,8 @@ def euler_integrator(dynamics: ca.Function, dt: float) -> ca.Function:
     -------
         CasADi function representing the discretized dynamics.
     """
-    nx = dynamics.size_in(0)[0]
-    nu = dynamics.size_in(1)[0]
+    nx = dynamics.f.size_in(0)[0]
+    nu = dynamics.f.size_in(1)[0]
     X0 = ca.MX.sym("X0", nx)
     U0 = ca.MX.sym("U0", nu)
     X_next = X0 + dt * dynamics(X0, U0)

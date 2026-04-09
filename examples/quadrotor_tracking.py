@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.7
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: model-predictive-control (3.12.1)
 #     language: python
@@ -25,8 +25,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
-from model_predictive_control.ocp import OCP
 from model_predictive_control.objective import LQRObjective
+from model_predictive_control.ocp import OCP
+from model_predictive_control.dynamics import Dynamics
 from model_predictive_control.plots import plot_controls, plot_states
 
 # %% [markdown]
@@ -249,7 +250,7 @@ ocp = OCP(
     N=N,
     dt=dt,
     objective=objective,
-    dynamics=dynamics,
+    dynamics=Dynamics(dynamics),
     constraints=cl,
 )
 

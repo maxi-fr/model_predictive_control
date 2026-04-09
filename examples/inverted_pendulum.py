@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.7
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: .venv
 #     language: python
@@ -26,8 +26,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
-from model_predictive_control.ocp import OCP
 from model_predictive_control.objective import QuadraticObjective
+from model_predictive_control.ocp import OCP
+from model_predictive_control.dynamics import Dynamics
 from model_predictive_control.plots import plot_controls, plot_states
 
 # %% [markdown]
@@ -147,7 +148,7 @@ ocp = OCP(
     N=N,
     dt=dt,
     objective=objective,
-    dynamics=dynamics,
+    dynamics=Dynamics(dynamics),
     constraints=cl,
 )
 
@@ -158,8 +159,6 @@ ocp.setup(
 
 # Solve the OCP
 X_opt, U_opt, status = ocp.solve(x0_val)
-
-
 
 # %% [markdown]
 # ## 5. Visualizing the Results

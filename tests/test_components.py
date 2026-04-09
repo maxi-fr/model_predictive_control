@@ -10,10 +10,8 @@ from model_predictive_control.constraints import (
     StateNormConstraint,
     TerminalLinearConstraint,
 )
+from model_predictive_control.dynamics import Dynamics, LinearDynamics
 from model_predictive_control.objective import TerminalQuadraticCost
-from model_predictive_control.ocp import (
-    linear_dynamics,
-)
 
 
 def test_linear_constraints() -> None:
@@ -43,14 +41,14 @@ def test_linear_dynamics() -> None:
     A = np.array([[1, 2], [3, 4]])
     B = np.array([[5], [6]])
 
-    func = linear_dynamics(A, B)
+    func = LinearDynamics(A, B).f
     assert func.size_in(0) == (2, 1)  # nx
     assert func.size_in(1) == (1, 1)  # nu
     assert func.size_out(0) == (2, 1)  # out
 
     # Mismatch tests
     with pytest.raises(ValueError):
-        linear_dynamics(np.array([[1, 2]]), B)
+        LinearDynamics(np.array([[1, 2]]), B)
 
 
 def test_state_bounds_constraints() -> None:

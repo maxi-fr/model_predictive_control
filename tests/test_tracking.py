@@ -1,6 +1,7 @@
 import casadi as ca
 import numpy as np
 
+from model_predictive_control.dynamics import Dynamics, LinearDynamics
 from model_predictive_control.objective import LQRObjective
 from model_predictive_control.ocp import OCP, LinearOCP
 
@@ -23,7 +24,7 @@ def test_ocp_with_tracking_reference() -> None:
 
     obj = LQRObjective(Q, R, Q * 10, N)
 
-    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=Dynamics(dyn))
 
     ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="ipopt", solver_opts={"print_level": 0})
 
@@ -52,7 +53,7 @@ def test_linear_ocp_with_tracking_reference() -> None:
     R = np.eye(nu)
     Qf = np.eye(nx) * 50
 
-    lin_ocp = LinearOCP(N=N, dt=dt, A=A, B=B, Q=Q, R=R, Qf=Qf)
+    lin_ocp = LinearOCP(N=N, dt=dt, dynamics=LinearDynamics(A, B), Q=Q, R=R, Qf=Qf)
 
     lin_ocp.setup(
         method="multiple_shooting",
@@ -90,7 +91,7 @@ def test_linearize_with_reference() -> None:
 
     obj = LQRObjective(Q, R, np.zeros((nx, nx)), N)
 
-    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=dyn)
+    ocp = OCP(N=N, dt=dt, objective=obj, dynamics=Dynamics(dyn))
 
     x_bar = np.zeros(nx)
     u_bar = np.zeros(nu)
