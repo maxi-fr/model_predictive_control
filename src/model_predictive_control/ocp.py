@@ -22,7 +22,15 @@ if TYPE_CHECKING:
 from model_predictive_control.dynamics import Dynamics, LinearDynamics
 
 
-class OCP:  # noqa: D101 TODO: add doc string
+class OCP:
+    """
+    Represents an Optimal Control Problem (OCP).
+
+    This class encapsulates the configuration for an OCP, including the prediction horizon,
+    sampling time, cost objective, system dynamics, and constraints. It provides methods
+    to set up and solve the problem using numerical optimization.
+    """
+
     def __init__(
         self,
         N: int,
@@ -765,8 +773,18 @@ class OCP:  # noqa: D101 TODO: add doc string
         return total_cost
 
 
-class LinearOCP:  # noqa: D101
-    def __init__(  # noqa: PLR0913  # TODO: fix D101
+
+class LinearOCP:
+    """
+    Represents a Linear Optimal Control Problem (OCP) with quadratic costs and linear constraints.
+
+    The cost function is assumed to be of the form:
+    J = 0.5 * sum_{k=0}^{N-1} (x_k^T Q_k x_k + u_k^T R_k u_k + 2 * x_k^T N_{cross,k} u_k + 2 * q_k^T x_k + 2 * r_k^T u_k)
+        + 0.5 * x_N^T Qf x_N + qf^T x_N
+
+    The dynamics are linear: x_{k+1} = A_k x_k + B_k u_k.
+    """
+    def __init__(  # noqa: PLR0913
         self,
         N: int,
         dt: float,
@@ -1399,7 +1417,19 @@ class LinearOCP:  # noqa: D101
         return total_cost
 
 
-def rk4_integrator(dynamics: "Dynamics", dt: float) -> ca.Function:  # noqa: D103
+def rk4_integrator(dynamics: "Dynamics", dt: float) -> ca.Function:
+    """
+    Implement a 4th-order Runge-Kutta integrator for continuous-time dynamics.
+
+    Parameters
+    ----------
+        dynamics: Continuous-time dynamics function f(x, u).
+        dt: Sampling time.
+
+    Returns
+    -------
+        CasADi function representing the discretized dynamics.
+    """
     nx = dynamics.f.size_in(0)[0]
     nu = dynamics.f.size_in(1)[0]
     X0 = ca.MX.sym("X0", nx)
@@ -1412,7 +1442,19 @@ def rk4_integrator(dynamics: "Dynamics", dt: float) -> ca.Function:  # noqa: D10
     return ca.Function("dyn_rk4", [X0, U0], [X_next])
 
 
-def euler_integrator(dynamics: "Dynamics", dt: float) -> ca.Function:  # noqa: D103
+def euler_integrator(dynamics: "Dynamics", dt: float) -> ca.Function:
+    """
+    Implement a forward Euler integrator for continuous-time dynamics.
+
+    Parameters
+    ----------
+        dynamics: Continuous-time dynamics function f(x, u).
+        dt: Sampling time.
+
+    Returns
+    -------
+        CasADi function representing the discretized dynamics.
+    """
     nx = dynamics.f.size_in(0)[0]
     nu = dynamics.f.size_in(1)[0]
     X0 = ca.MX.sym("X0", nx)
