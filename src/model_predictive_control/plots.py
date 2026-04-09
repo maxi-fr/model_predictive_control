@@ -127,7 +127,6 @@ def plot_mpc_trajectories(  # noqa: PLR0913
     # Create a unified color cycle for states
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
-    # Pre-calculate relative time once to avoid repeated array instantiation
     relative_time = np.arange(N_horizon + 1) * dt
 
     for i, idx in enumerate(indices):
