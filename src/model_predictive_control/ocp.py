@@ -773,7 +773,6 @@ class OCP:
         return total_cost
 
 
-
 class LinearOCP:
     """
     Represents a Linear Optimal Control Problem (OCP) with quadratic costs and linear constraints.
@@ -784,6 +783,7 @@ class LinearOCP:
 
     The dynamics are linear: x_{k+1} = A_k x_k + B_k u_k.
     """
+
     def __init__(  # noqa: PLR0913
         self,
         N: int,

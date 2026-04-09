@@ -14,12 +14,10 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
-  - repo: https://github.com/mwouts/jupytext
-    rev: v1.16.7
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
     hooks:
-      - id: jupytext
-        args: [--sync]
-        files: ^examples/.*\.ipynb$
+      - id: nbstripout
   - repo: https://github.com/abravalheri/validate-pyproject
     rev: v0.25
     hooks:
@@ -58,3 +56,9 @@ repos:
         types: [python]
         pass_filenames: false
         exclude: ^examples/.*\.py$
+
+      - id: test-notebooks
+        name: Test Jupyter Notebook Execution
+        entry: uv run pytest --nbmake
+        language: system
+        types: [jupyter]

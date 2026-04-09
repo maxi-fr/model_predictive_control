@@ -54,7 +54,7 @@ Usage examples are provided as Jupyter notebooks in the `examples/` directory.
 - **Linear MPC:** See [`examples/linear_mpc.ipynb`](examples/linear_mpc.ipynb) for a closed-loop Model Predictive Control simulation of an unstable linear 2D system using the `LinearOCP` class with a QP formulation.
 - **Quadrotor Tracking:** See [`examples/quadrotor_tracking.ipynb`](examples/quadrotor_tracking.ipynb) for an open-loop optimal control formulation of a 3D quadrotor tracking a time-varying reference trajectory.
 
-## Testing
+## Developement
 
 The project uses `pytest` for unit testing. To run the tests:
 
