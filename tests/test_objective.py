@@ -244,3 +244,78 @@ def test_cost_function_call() -> None:
     # Evaluate cost
     val = cost(x_val, u_val, x_ref, u_ref)
     assert val.shape == (1, 1)
+
+
+def test_lqr_cost_math() -> None:
+    Q = np.array([[2, 0], [0, 3]])
+    R = np.array([[4]])
+    N_cross = np.array([[1], [0.5]])
+    cost = LQRCost(Q, R, N_cross)
+
+    x_val = np.array([1.5, -2.0])
+    u_val = np.array([3.0])
+    x_ref = np.array([0.5, -1.0])
+    u_ref = np.array([1.0])
+
+    # dx = [1.0, -1.0]
+    # du = [2.0]
+    # dx.T * Q * dx = 1*2*1 + (-1)*3*(-1) = 2 + 3 = 5
+    # du.T * R * du = 2*4*2 = 16
+    # dx.T * N_cross * du = [1.0, -1.0] * [[1], [0.5]] * 2 = (1*1 + -1*0.5) * 2 = 0.5 * 2 = 1
+    # total = 5 + 16 + 1 = 22
+
+    val = cost(x_val, u_val, x_ref, u_ref)
+    assert np.isclose(float(val), 22.0)
+
+
+def test_terminal_lqr_cost_math() -> None:
+    Qf = np.array([[2, 0], [0, 3]])
+    cost = TerminalLQRCost(Qf)
+
+    x_val = np.array([1.5, -2.0])
+    x_ref = np.array([0.5, -1.0])
+
+    # dx = [1.0, -1.0]
+    # dx.T * Qf * dx = 1*2*1 + (-1)*3*(-1) = 5
+
+    val = cost(x_val, x_ref)
+    assert np.isclose(float(val), 5.0)
+
+
+def test_quadratic_cost_math() -> None:
+    Q = np.array([[2, 0], [0, 3]])
+    R = np.array([[4]])
+    q = np.array([[0.5], [1.5]])
+    r = np.array([[-1.0]])
+    N_cross = np.array([[1], [0.5]])
+
+    cost = QuadraticCost(Q, R, q, r, N_cross)
+
+    x_val = np.array([1.0, -1.0])
+    u_val = np.array([2.0])
+
+    # x.T * Q * x = 1*2*1 + (-1)*3*(-1) = 5
+    # u.T * R * u = 2*4*2 = 16
+    # x.T * N_cross * u = [1, -1] * [[1], [0.5]] * 2 = (1 - 0.5) * 2 = 1
+    # x.T * q = [1, -1] * [0.5, 1.5] = 0.5 - 1.5 = -1.0
+    # u.T * r = 2 * -1 = -2.0
+    # Total = 5 + 16 + 1 - 1 - 2 = 19.0
+
+    val = cost(x_val, u_val)
+    assert np.isclose(float(val), 19.0)
+
+
+def test_terminal_quadratic_cost_math() -> None:
+    Qf = np.array([[2, 0], [0, 3]])
+    qf = np.array([[0.5], [1.5]])
+
+    cost = TerminalQuadraticCost(Qf, qf)
+
+    x_val = np.array([1.0, -1.0])
+
+    # x.T * Qf * x = 5
+    # x.T * qf = -1.0
+    # Total = 4.0
+
+    val = cost(x_val)
+    assert np.isclose(float(val), 4.0)
