@@ -169,3 +169,17 @@ def test_linear_mpc_tracking() -> None:
     # Pass 1D references, the wrapper should pass them down, and LinearOCP should tile them
     u0 = mpc.step(x0, x_ref=x_ref_1d, u_ref=u_ref_1d)
     assert u0.shape == (1,)
+
+
+def test_mpc_invalid_x_guess_shape() -> None:
+    ocp = setup_simple_ocp()
+    setup_args = {
+        "method": "multiple_shooting",
+        "dynamics_type": "continuous",
+        "integrator": rk4_integrator,
+        "solver_opts": {"print_level": 0},
+    }
+    # Correct shape is (N+1, nx) = (11, 2)
+    X_guess_bad = np.zeros((10, 2))
+    with pytest.raises(ValueError, match="X_guess must have shape"):
+        MPC(ocp=ocp, setup_args=setup_args, X_guess=X_guess_bad)
