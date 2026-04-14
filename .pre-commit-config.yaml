@@ -81,4 +81,4 @@ repos:
         entry: uv run pytest --nbmake
         language: system
         types: [jupyter]
-        always_run: True
+        always_run: true

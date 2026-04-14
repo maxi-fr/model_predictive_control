@@ -115,6 +115,7 @@ def test_ocp_validation_wrong_dims() -> None:
         ("single_shooting", "discrete"),
     ],
 )
+@pytest.mark.filterwarnings("ignore:integrator argument is ignored when method is 'collocation'")
 def test_ocp_setup_and_solve(method: str, dynamics_type: str) -> None:
     if dynamics_type == "discrete":
         # Discretize it manually for the discrete test

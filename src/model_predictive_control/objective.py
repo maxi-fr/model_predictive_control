@@ -14,34 +14,36 @@ class CostFunction:
 
     @property
     def has_reference(self) -> bool:
+        """Check if the cost function has a reference input."""
         return self._has_reference
 
-    def __call__(self, *args: Any) -> ca.MX:
+    def __call__(self, *args: Any) -> ca.MX:  # noqa: ANN401
+        """Evaluate the cost function."""
         return self.f(*args)
 
     def validate_dimensions(self, nx: int, nu: int | None = None) -> None:
         """Validate dimensions of the casadi function."""
         if self.f.size_in(0)[0] != nx:
-            raise ValueError(f"Cost function state input size ({self.f.size_in(0)[0]}) must match state size ({nx}).")
+            msg = f"Cost function state input size ({self.f.size_in(0)[0]}) must match state size ({nx})."
+            raise ValueError(msg)
 
         if nu is not None:
             if self.f.size_in(1)[0] != nu:
-                raise ValueError(
-                    f"Cost function control input size ({self.f.size_in(1)[0]}) must match control size ({nu})."
-                )
+                msg = f"Cost function control input size ({self.f.size_in(1)[0]}) must match control size ({nu})."
+                raise ValueError(msg)
 
-            if self.has_reference:
-                if self.f.n_in() == 4 and (self.f.size_in(2)[0] != nx or self.f.size_in(3)[0] != nu):
-                    raise ValueError(
-                        f"Cost function reference inputs must match state ({nx}) and control ({nu}) sizes."
-                    )
+            if self.has_reference and self.f.n_in() == 4 and (self.f.size_in(2)[0] != nx or self.f.size_in(3)[0] != nu):
+                msg = f"Cost function reference inputs must match state ({nx}) and control ({nu}) sizes."
+                raise ValueError(msg)
         # Terminal cost
         elif self.has_reference:
             if self.f.n_in() == 2 and self.f.size_in(1)[0] != nx:
-                raise ValueError(f"Cost function reference input must match state ({nx}) size.")
+                msg = f"Cost function reference input must match state ({nx}) size."
+                raise ValueError(msg)
 
         if self.f.size_out(0)[0] != 1:
-            raise ValueError("Cost function must return a scalar.")
+            msg = "Cost function must return a scalar."
+            raise ValueError(msg)
 
 
 class LQRCost(CostFunction):
@@ -180,7 +182,7 @@ class Objective:
     @typing.overload
     def __init__(self, stage_costs: list[CostFunction], cost_term: CostFunction) -> None: ...
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         self.stage_costs: list[CostFunction] = []
         self.terminal_cost: CostFunction | None = None
 
@@ -206,10 +208,17 @@ class Objective:
             self.stage_costs = list(stage_costs)
             self.terminal_cost = None
         else:
-            raise ValueError("Invalid arguments for Objective constructor.")
+            msg = "Invalid arguments for Objective constructor."
+            raise ValueError(msg)
 
     @property
     def has_reference(self) -> bool:
+        """Check if any cost function in the objective requires a reference.
+
+        Returns
+        -------
+            True if any stage cost or the terminal cost has a reference input.
+        """
         if any(c.has_reference for c in self.stage_costs):
             return True
         return bool(self.terminal_cost is not None and self.terminal_cost.has_reference)
@@ -234,7 +243,7 @@ class LQRObjective(Objective):
 class QuadraticObjective(Objective):
     """Quadratic Objective Factory."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         Q: np.ndarray,
         R: np.ndarray,

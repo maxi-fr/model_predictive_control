@@ -9,18 +9,22 @@ class Dynamics:
         self.f = f
 
     def __call__(self, x: ca.MX, u: ca.MX) -> ca.MX:
+        """Evaluate the dynamics."""
         return self.f(x, u)
 
     def validate_dimensions(self, nx: int, nu: int) -> None:
         """Validate dimensions of the casadi function."""
         if self.f.size_in(0)[0] != nx:
-            raise ValueError(f"Dynamics state input size ({self.f.size_in(0)[0]}) must match state size ({nx}).")
+            msg = f"Dynamics state input size ({self.f.size_in(0)[0]}) must match state size ({nx})."
+            raise ValueError(msg)
 
         if self.f.size_in(1)[0] != nu:
-            raise ValueError(f"Dynamics control input size ({self.f.size_in(1)[0]}) must match control size ({nu}).")
+            msg = f"Dynamics control input size ({self.f.size_in(1)[0]}) must match control size ({nu})."
+            raise ValueError(msg)
 
         if self.f.size_out(0)[0] != nx:
-            raise ValueError(f"Dynamics output state size ({self.f.size_out(0)[0]}) must match state size ({nx}).")
+            msg = f"Dynamics output state size ({self.f.size_out(0)[0]}) must match state size ({nx})."
+            raise ValueError(msg)
 
 
 class LinearDynamics(Dynamics):
@@ -42,9 +46,11 @@ class LinearDynamics(Dynamics):
         nu = B_k.shape[1]
 
         if A_k.shape[0] != nx:
-            raise ValueError("Matrix A must be square.")
+            msg = "Matrix A must be square."
+            raise ValueError(msg)
         if B_k.shape[0] != nx:
-            raise ValueError("Matrix B must have the same number of rows as A.")
+            msg = "Matrix B must have the same number of rows as A."
+            raise ValueError(msg)
 
         self.A = A
         self.B = B
