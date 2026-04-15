@@ -2,6 +2,7 @@ from collections.abc import Iterable, Iterator
 
 import casadi as ca
 import numpy as np
+import scipy.stats as st
 from numpy.typing import ArrayLike
 
 Index = int | slice | Iterable[int]
@@ -541,3 +542,82 @@ class ConstraintList:
             The number of constraints.
         """
         return len(self.constraints)
+
+
+class LinearChanceConstraint(LinearConstraint):
+    """Linear chance constraint wrapping F*x + G*u <= h, tightened for Gaussian noise."""
+
+    def __init__(  # noqa: PLR0913
+        self,
+        h: ArrayLike,
+        A: ArrayLike,
+        Sigma_w: ArrayLike,
+        epsilon: float,
+        N: int,
+        F: ArrayLike | None = None,
+        G: ArrayLike | None = None,
+        nx: int | None = None,
+        nu: int | None = None,
+    ) -> None:
+        """
+        Initialize the linear chance constraint.
+
+        Parameters
+        ----------
+            h: Upper bound array (will be tightened).
+            A: System dynamics matrix (nx x nx) for variance propagation.
+            Sigma_w: Process noise covariance matrix (nx x nx).
+            epsilon: Maximum allowed violation probability (0 < epsilon < 1).
+            N: Horizon length over which to propagate variance.
+            F: State coefficient matrix.
+            G: Control coefficient matrix.
+            nx: Number of states (required if F is None).
+            nu: Number of controls (required if G is None).
+        """
+        h_arr = np.asarray(h, dtype=float)
+        A_arr = np.asarray(A, dtype=float)
+        Sigma_w_arr = np.asarray(Sigma_w, dtype=float)
+        F_arr = np.asarray(F, dtype=float) if F is not None else None
+
+        nx_inferred = A_arr.shape[0]
+
+        # Compute open-loop variance propagation over horizon N
+        Sigma_k = np.zeros((nx_inferred, nx_inferred))
+        max_variances = np.zeros(nx_inferred)
+
+        for _ in range(N):
+            max_variances = np.maximum(max_variances, np.diag(Sigma_k))
+            Sigma_k = A_arr @ Sigma_k @ A_arr.T + Sigma_w_arr
+
+        # We need to project the state variance into the constraint space defined by F.
+        # Var(F x) = F * Var(x) * F^T. Wait, the notebook just takes max variance of position
+        # but to be general, the constraint is F_i * x <= h_i.
+        # The variance of F_i * x is F_i * Sigma_k * F_i^T.
+
+        # In the notebook: F is [[1, 0]] or [[-1, 0]], so F_i * x is just p or -p.
+        # The variance of p or -p is the same: F_i * Sigma_k * F_i^T.
+
+        # Let's compute the maximum standard deviation for each constraint i over the horizon
+        nc = h_arr.shape[0] if h_arr.size > 0 else 0
+        h_tight = h_arr.copy()
+
+        z_val = st.norm.ppf(1 - epsilon)
+
+        if F_arr is not None:
+            if F_arr.ndim == 1:
+                F_arr = F_arr.reshape(1, -1)
+
+            max_std_devs = np.zeros(nc)
+
+            # Recalculate over horizon N and find max variance for each constraint
+            Sigma_k = np.zeros((nx_inferred, nx_inferred))
+            for _ in range(N):
+                # Variance of F x is diag(F * Sigma_k * F^T)
+                var_Fx = np.diag(F_arr @ Sigma_k @ F_arr.T)
+                max_std_devs = np.maximum(max_std_devs, np.sqrt(var_Fx))
+                Sigma_k = A_arr @ Sigma_k @ A_arr.T + Sigma_w_arr
+
+            tightening = z_val * max_std_devs
+            h_tight = h_arr - tightening
+
+        super().__init__(h=h_tight, F=F, G=G, is_equality=False, nx=nx, nu=nu)

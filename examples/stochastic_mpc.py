@@ -15,7 +15,6 @@
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.stats as st
 
 from model_predictive_control.constraints import ConstraintList, LinearConstraint
 from model_predictive_control.dynamics import LinearDynamics
@@ -104,30 +103,23 @@ nominal_mpc = LinearMPC(linear_ocp=nominal_ocp, setup_args={"solver": "osqp"})
 # For simplicity in this example, we assume open-loop variance propagation over the horizon to compute the tightening.
 
 # %%
+from model_predictive_control.constraints import LinearChanceConstraint
+
 epsilon = 0.05  # 5% violation probability
-z_val = st.norm.ppf(1 - epsilon)
-
-# Compute variance propagation over horizon N
-Sigma_k = np.zeros((2, 2))
-pos_variance_horizon = []
-
-for _i in range(N):
-    pos_variance_horizon.append(Sigma_k[0, 0])
-    Sigma_k = A @ Sigma_k @ A.T + Sigma_w
-
-# For a strict chance constraint, we tighten the bounds by z_val * std_dev
-# To keep it simple, we'll take the maximum tightening over the horizon and apply it uniformly
-max_std_dev = np.sqrt(max(pos_variance_horizon))
-tightening = z_val * max_std_dev
-
-print(f"Constraint tightening margin: {tightening:.3f}")
-
-cc_p_max = p_max - tightening
-cc_p_min = p_min + tightening
 
 cc_state_constraints = ConstraintList()
-cc_state_constraints.add(LinearConstraint(h=np.array([cc_p_max]), F=np.array([[1.0, 0.0]]), nu=nu), slice(1, None))
-cc_state_constraints.add(LinearConstraint(h=np.array([-cc_p_min]), F=np.array([[-1.0, 0.0]]), nu=nu), slice(1, None))
+cc_state_constraints.add(
+    LinearChanceConstraint(
+        h=np.array([p_max]), F=np.array([[1.0, 0.0]]), A=A, Sigma_w=Sigma_w, epsilon=epsilon, N=N, nu=nu
+    ),
+    slice(1, None),
+)
+cc_state_constraints.add(
+    LinearChanceConstraint(
+        h=np.array([-p_min]), F=np.array([[-1.0, 0.0]]), A=A, Sigma_w=Sigma_w, epsilon=epsilon, N=N, nu=nu
+    ),
+    slice(1, None),
+)
 
 # Control limits (unchanged)
 cc_state_constraints.add(LinearConstraint(h=np.array([u_max]), G=np.array([[1.0]]), nx=nx), slice(0, N))
@@ -142,41 +134,38 @@ cc_mpc = LinearMPC(linear_ocp=cc_ocp, setup_args={"solver": "osqp"})
 # We simulate both controllers starting from an initial condition close to the bound. The same noise realization will be applied to both.
 
 # %%
+from model_predictive_control.simulation import simulate
+
 n_steps = 50
 x0 = np.array([0.8, 0.0])  # Start near the boundary
 
-# Generate identical noise sequence for fair comparison
-noise_seq = np.random.multivariate_normal(np.zeros(2), Sigma_w, size=n_steps)
 
-
-def run_simulation(mpc_controller):
-    x = x0.copy()
-    states = [x]
-    controls = []
-
-    for _i in range(n_steps):
-        # Solve MPC using wrapper step
-        try:
-            u_k = mpc_controller.step(x)
-        except RuntimeError as e:
-            print(f"MPC solve failed at step {_i}: {e}")
-            break
-
-        # Apply control and noise
-        x_next = A @ x + B.flatten() * u_k + noise_seq[_i]
-
-        states.append(x_next)
-        controls.append(u_k)
-        x = x_next
-
-    return np.array(states), np.array(controls)
+def noisy_dynamics(x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    x_next_nom = dynamics(x, u)
+    noise = np.random.multivariate_normal(np.zeros(2), Sigma_w)
+    return np.array(x_next_nom).flatten() + noise
 
 
 print("Running Nominal MPC...")
-states_nom, controls_nom = run_simulation(nominal_mpc)
+np.random.seed(42)  # Seed for reproducible comparison
+res_nom = simulate(nominal_mpc, noisy_dynamics, x0, num_steps=n_steps)
+states_nom = res_nom.X
+controls_nom = res_nom.U
 
 print("Running Chance Constrained MPC...")
-states_cc, controls_cc = run_simulation(cc_mpc)
+np.random.seed(42)  # Reset seed for fair comparison
+try:
+    res_cc = simulate(cc_mpc, noisy_dynamics, x0, num_steps=n_steps)
+    states_cc = res_cc.X
+    controls_cc = res_cc.U
+except RuntimeError as e:
+    print(f"MPC solve failed: {e}")
+    states_cc = np.array([])
+    controls_cc = np.array([])
+
+# Recover tightening bounds for plot
+cc_p_max = cc_mpc.ocp.constraints.constraints[0][0].h[0]  # type: ignore
+cc_p_min = -cc_mpc.ocp.constraints.constraints[1][0].h[0]  # type: ignore
 
 # %% [markdown]
 # ## 6. Results
