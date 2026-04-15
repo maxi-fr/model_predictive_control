@@ -589,15 +589,6 @@ class LinearChanceConstraint(LinearConstraint):
             max_variances = np.maximum(max_variances, np.diag(Sigma_k))
             Sigma_k = A_arr @ Sigma_k @ A_arr.T + Sigma_w_arr
 
-        # We need to project the state variance into the constraint space defined by F.
-        # Var(F x) = F * Var(x) * F^T. Wait, the notebook just takes max variance of position
-        # but to be general, the constraint is F_i * x <= h_i.
-        # The variance of F_i * x is F_i * Sigma_k * F_i^T.
-
-        # In the notebook: F is [[1, 0]] or [[-1, 0]], so F_i * x is just p or -p.
-        # The variance of p or -p is the same: F_i * Sigma_k * F_i^T.
-
-        # Let's compute the maximum standard deviation for each constraint i over the horizon
         nc = h_arr.shape[0] if h_arr.size > 0 else 0
         h_tight = h_arr.copy()
 
