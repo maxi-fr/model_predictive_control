@@ -13,9 +13,9 @@ This package is designed to provide a modular, structured approach to defining d
 - **Strict Setup/Solve Separation:** Formulate the OCP once (`setup()`), then repeatedly execute the optimization (`solve(x0)`) for MPC applications.
 - **MPC Wrapper:** Provides a convenient `MPC` wrapper class to easily execute closed-loop simulations using an underlying OCP solver.
 - **Robust Validation:** Enforces explicit dimension validation for states, controls, and functions to catch errors early.
-- **Multiple Integration Methods:** Supports continuous (Runge-Kutta 4, Forward Euler) and discrete dynamics.
-- **Multiple Discretization Schemes:** Implements single shooting, multiple shooting, and Hermite-Simpson direct collocation.
 - **Constructor Injection:** Mandates fully formed objects via constructor injection for dynamics, objectives, and constraints.
+- **Multiple OCP Solving Methods:** Implements single shooting, multiple shooting, and Hermite-Simpson direct collocation.
+- **Simulation and Experimentation:** Includes modules for running closed-loop simulations (`simulate`) and batch experiments (`experiment`) with logging and tracking of solver statistics.
 
 ## Installation
 
@@ -53,10 +53,17 @@ Usage examples are provided as Jupyter notebooks in the `examples/` directory.
 - **Inverted Pendulum:** See [`examples/inverted_pendulum.ipynb`](examples/inverted_pendulum.ipynb) for a complete demonstration of formulating an OCP for an inverted pendulum, setting up the solver, and visualizing the results.
 - **Linear MPC:** See [`examples/linear_mpc.ipynb`](examples/linear_mpc.ipynb) for a closed-loop Model Predictive Control simulation of an unstable linear 2D system using the `LinearOCP` class with a QP formulation.
 - **Quadrotor Tracking:** See [`examples/quadrotor_tracking.ipynb`](examples/quadrotor_tracking.ipynb) for an open-loop optimal control formulation of a 3D quadrotor tracking a time-varying reference trajectory.
+- **Quadrotor MPC:** See [`examples/quadrotor_mpc.ipynb`](examples/quadrotor_mpc.ipynb) for a closed-loop Model Predictive Control simulation of a 3D quadrotor tracking a time-varying reference trajectory.
 
-## Developement
+## Development
 
-The project uses `pytest` for unit testing. To run the tests:
+The project uses several tools to maintain code quality:
+
+- `ruff` for linting and formatting
+- `mypy` for static type checking
+- `pytest` for unit testing
+
+To run the tests:
 
 ```bash
 uv run pytest
