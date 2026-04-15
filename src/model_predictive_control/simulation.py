@@ -1,11 +1,15 @@
 # ruff: noqa: PLR0912, PLR0913, PLR0915, C901, TRY003, EM102, EM101, SIM102, SIM108, SLF001
+import datetime
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Self
 
 import casadi as ca
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 from numpy.typing import ArrayLike
 
 from .dynamics import Dynamics
@@ -32,6 +36,52 @@ class SimulationResult:
     """Solver status at each step, length: num_steps"""
     solve_time: npt.NDArray[np.float64]
     """Computation time at each step in seconds, shape: (num_steps,)"""
+
+    def save(self, filepath: str | Path) -> None:
+        """
+        Save the simulation results to a compressed numpy archive (.npz).
+
+        Args:
+            filepath: Path to save the file to. The '.npz' extension will be added if missing.
+        """
+        path = Path(filepath)
+        if path.suffix != ".npz":
+            path = path.with_suffix(".npz")
+
+        # Create parent directories if they don't exist
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        data = asdict(self)
+        np.savez_compressed(path, **data)
+
+    @classmethod
+    def load(cls, filepath: str | Path) -> Self:
+        """
+        Load simulation results from a compressed numpy archive (.npz).
+
+        Args:
+            filepath: Path to the .npz file.
+
+        Returns
+        -------
+            A new SimulationResult instance.
+        """
+        path = Path(filepath)
+        if not path.exists() and path.with_suffix(".npz").exists():
+            path = path.with_suffix(".npz")
+
+        with np.load(path) as data:
+            # Reconstruct the dataclass fields
+            kwargs = {}
+            for key in data.files:
+                val = data[key]
+                if key == "status":
+                    # Convert status array back to list of strings
+                    kwargs[key] = val.tolist()
+                else:
+                    kwargs[key] = val
+
+            return cls(**kwargs)
 
 
 def simulate(
@@ -193,7 +243,8 @@ def experiment(
     num_steps: int,
     x_ref: ArrayLike | list[npt.NDArray[np.float64]] | None = None,
     u_ref: ArrayLike | list[npt.NDArray[np.float64]] | None = None,
-) -> list[SimulationResult]:
+    save_dir: str | Path | None = None,
+) -> pd.DataFrame:
     """
     Run an MPC simulation for a batch of initial conditions.
 
@@ -206,12 +257,21 @@ def experiment(
             or a list of references, one for each initial condition.
         u_ref: Optional control reference trajectory. Can be a single reference applied to all simulations,
             or a list of references, one for each initial condition.
+        save_dir: Directory where the results should be saved. If None, defaults to 'results/experiment_<datetime>'.
 
     Returns
     -------
-        A list of SimulationResult objects, one for each initial condition.
+        A pandas DataFrame containing summary metrics for each initial condition.
     """
-    results = []
+    if save_dir is None:
+        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
+        save_dir = Path("results") / f"experiment_{timestamp}"
+    else:
+        save_dir = Path(save_dir)
+
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics = []
 
     is_list_x_ref = isinstance(x_ref, list) and len(x_ref) == len(x0_list)
     x_ref_list = ca.vertcat() if not isinstance(x_ref, list) else x_ref
@@ -231,6 +291,18 @@ def experiment(
             x_ref=curr_x_ref,
             u_ref=curr_u_ref,
         )
-        results.append(res)
 
-    return results
+        res.save(save_dir / f"run_{i}.npz")
+
+        metrics.append(
+            {
+                "run_id": i,
+                "total_stage_cost": float(np.sum(res.stage_cost)),
+                "mean_solve_time": float(np.mean(res.solve_time)),
+                "max_solve_time": float(np.max(res.solve_time)),
+                "final_status": res.status[-1] if len(res.status) > 0 else "unknown",
+                "all_optimal": all(s == "optimal" for s in res.status),
+            }
+        )
+
+    return pd.DataFrame(metrics)

@@ -1,12 +1,13 @@
-from typing import Any
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from model_predictive_control.dynamics import LinearDynamics
 from model_predictive_control.mpc import LinearMPC
 from model_predictive_control.ocp import LinearOCP
-from model_predictive_control.simulation import experiment, simulate
+from model_predictive_control.simulation import SimulationResult, experiment, simulate
 
 
 @pytest.fixture
@@ -67,22 +68,52 @@ def test_simulate_long_reference(simple_mpc_setup: tuple[LinearMPC, LinearDynami
     assert res.U.shape == (num_steps, _nu)
 
 
-def test_experiment_batch(simple_mpc_setup: tuple[LinearMPC, LinearDynamics, int, int, int]) -> None:
-    mpc, dynamics, nx, _nu, _N = simple_mpc_setup
+def test_simulation_result_save_load(tmp_path: Path) -> None:
+    res = SimulationResult(
+        X=np.zeros((10, 2)),
+        U=np.zeros((9, 1)),
+        X_pred=np.zeros((9, 5, 2)),
+        U_pred=np.zeros((9, 4, 1)),
+        cost=np.zeros(9),
+        stage_cost=np.zeros(9),
+        status=["optimal"] * 9,
+        solve_time=np.zeros(9),
+    )
+
+    file_path = tmp_path / "test_result"
+    res.save(file_path)
+
+    loaded = SimulationResult.load(file_path)
+
+    assert type(loaded.status) is list
+    assert loaded.status == res.status
+    np.testing.assert_array_equal(loaded.X, res.X)
+    np.testing.assert_array_equal(loaded.U, res.U)
+    np.testing.assert_array_equal(loaded.stage_cost, res.stage_cost)
+
+
+def test_experiment_batch(simple_mpc_setup: tuple[LinearMPC, LinearDynamics, int, int, int], tmp_path: Path) -> None:
+    mpc, dynamics, _nx, _nu, _N = simple_mpc_setup
     x0_list = [np.array([1.0, 0.0]), np.array([-1.0, 0.5])]
     num_steps = 3
 
-    results = experiment(mpc, dynamics, x0_list, num_steps)
+    save_dir = tmp_path / "test_experiment"
+    df = experiment(mpc, dynamics, x0_list, num_steps, save_dir=save_dir)
 
-    assert len(results) == 2
-    assert results[0].X.shape == (num_steps + 1, nx)
-    assert results[1].X.shape == (num_steps + 1, nx)
-    assert np.allclose(results[0].X[0], x0_list[0])
-    assert np.allclose(results[1].X[0], x0_list[1])
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) == 2
+    assert "run_id" in df.columns
+    assert "total_stage_cost" in df.columns
+
+    # Verify that files were saved
+    assert (save_dir / "run_0.npz").exists()
+    assert (save_dir / "run_1.npz").exists()
 
 
-def test_experiment_batch_with_ref_list(simple_mpc_setup: tuple[LinearMPC, LinearDynamics, int, int, int]) -> None:
-    mpc, dynamics, nx, _nu, _N = simple_mpc_setup
+def test_experiment_batch_with_ref_list(
+    simple_mpc_setup: tuple[LinearMPC, LinearDynamics, int, int, int], tmp_path: Path
+) -> None:
+    mpc, dynamics, _nx, _nu, _N = simple_mpc_setup
     x0_list = [np.array([1.0, 0.0]), np.array([-1.0, 0.5])]
     num_steps = 3
 
@@ -90,8 +121,8 @@ def test_experiment_batch_with_ref_list(simple_mpc_setup: tuple[LinearMPC, Linea
     x_ref_2 = np.array([1.0, 1.0])
     x_ref_list = [x_ref_1, x_ref_2]
 
-    results = experiment(mpc, dynamics, x0_list, num_steps, x_ref=x_ref_list)
+    save_dir = tmp_path / "test_experiment_ref"
+    df = experiment(mpc, dynamics, x0_list, num_steps, x_ref=x_ref_list, save_dir=save_dir)
 
-    assert len(results) == 2
-    assert results[0].X.shape == (num_steps + 1, nx)
-    assert results[1].X.shape == (num_steps + 1, nx)
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) == 2
