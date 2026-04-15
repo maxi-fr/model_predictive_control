@@ -8,8 +8,8 @@ import numpy as np
 import numpy.typing as npt
 from numpy.typing import ArrayLike
 
-from model_predictive_control.dynamics import Dynamics
-from model_predictive_control.mpc import MPC, LinearMPC
+from .dynamics import Dynamics
+from .mpc import MPC, LinearMPC
 
 
 @dataclass

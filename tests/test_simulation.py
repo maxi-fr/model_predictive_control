@@ -3,7 +3,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from model_predictive_control import LinearDynamics, LinearMPC, LinearOCP
+from model_predictive_control.dynamics import LinearDynamics
+from model_predictive_control.mpc import LinearMPC
+from model_predictive_control.ocp import LinearOCP
 from model_predictive_control.simulation import experiment, simulate
 
 
