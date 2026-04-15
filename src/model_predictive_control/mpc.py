@@ -93,7 +93,10 @@ class MPC:  # noqa: D101  TODO: fix
         # we also check if it starts with "solve_failed".
         # Fail loudly if solve fails.
         if "solve_failed" in status.lower() or (
-            "success" not in status.lower() and "succeeded" not in status.lower() and "optimal" not in status.lower()
+            "success" not in status.lower()
+            and "succeeded" not in status.lower()
+            and "optimal" not in status.lower()
+            and "solved" not in status.lower()
         ):
             msg = f"OCP solve failed with status: {status}"
             raise RuntimeError(msg)
@@ -198,7 +201,10 @@ class LinearMPC:  # noqa: D101  TODO: fix
         )
 
         if "solve_failed" in status.lower() or (
-            "success" not in status.lower() and "succeeded" not in status.lower() and "optimal" not in status.lower()
+            "success" not in status.lower()
+            and "succeeded" not in status.lower()
+            and "optimal" not in status.lower()
+            and "solved" not in status.lower()
         ):
             msg = f"LinearOCP solve failed with status: {status}"
             raise RuntimeError(msg)
