@@ -169,12 +169,7 @@ def simulate(
         status_list.append(status)
         solve_time[k] = end_time - start_time
 
-        # Step dynamics
-        if isinstance(dynamics, Dynamics):
-            x_next_ca = dynamics(x_current, u_opt)
-            x_next = np.array(x_next_ca).flatten()
-        else:
-            x_next = np.array(dynamics(x_current, u_opt)).flatten()
+        x_next = np.asarray(dynamics(x_current, u_opt)).flatten()
 
         x_current = x_next
         X[k + 1] = x_current
