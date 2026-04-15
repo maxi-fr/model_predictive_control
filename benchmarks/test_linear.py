@@ -115,3 +115,29 @@ def test_linear_mpc_step(benchmark) -> None:  # type: ignore[no-untyped-def] # n
     else:
         benchmark.extra_info["avg_solver_iterations"] = -1
         benchmark.extra_info["total_solver_iterations"] = -1
+
+
+def test_linear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def] # noqa: ANN001
+    """Benchmark solving the linear OCP."""
+    mpc, _, _ = setup_linearized_inverted_pendulum_mpc()
+    ocp = mpc.ocp
+    x0_val = np.array([0.0, 0.0, 0.5, 0.0])
+
+    def solve_ocp() -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
+        return ocp.solve(x0_val)
+
+    result = benchmark(solve_ocp)
+    _, _, status = result
+    assert "solved" in status.lower() or "success" in status.lower()
+
+    try:
+        solver_obj = getattr(ocp, "_solver_obj", None)
+        if solver_obj is not None:
+            stats = solver_obj.stats()
+            iterations = stats.get("iter_count", -1)
+        else:
+            iterations = -1
+    except Exception:  # noqa: BLE001
+        iterations = -1
+
+    benchmark.extra_info["osqp_iterations"] = iterations

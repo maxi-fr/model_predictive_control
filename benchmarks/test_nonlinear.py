@@ -7,6 +7,7 @@ import numpy as np
 
 from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
 from model_predictive_control.dynamics import Dynamics
+from model_predictive_control.mpc import MPC
 from model_predictive_control.objective import QuadraticObjective
 from model_predictive_control.ocp import OCP
 
@@ -110,3 +111,76 @@ def test_nonlinear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def]
         iterations = -1
 
     benchmark.extra_info["ipopt_iterations"] = iterations
+
+
+def test_nonlinear_mpc_step(benchmark) -> None:  # type: ignore[no-untyped-def] # noqa: ANN001
+    """Benchmark stepping the non-linear MPC loop."""
+    ocp = setup_inverted_pendulum_ocp()
+    setup_args = {
+        "method": "collocation",
+        "dynamics_type": "continuous",
+        "solver": "ipopt",
+        "solver_opts": {"print_level": 0, "max_iter": 1000},
+    }
+    mpc = MPC(ocp=ocp, setup_args=setup_args)
+
+    # Initial offset
+    x_current = np.array([0.0, 0.0, 0.5, 0.0])
+    num_steps = 10
+
+    # We need to simulate the system, using a simple euler step for demonstration
+    m_cart = 1.0
+    m_pend = 0.1
+    length = 0.5
+    g = 9.81
+    dt = 0.05
+
+    def simulate_step(x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        p, v, theta, omega = x[0], x[1], x[2], x[3]
+        sin_theta = np.sin(theta)
+        cos_theta = np.cos(theta)
+        denominator = m_cart + m_pend - m_pend * cos_theta**2
+
+        p_ddot = (u[0] + m_pend * length * omega**2 * sin_theta - m_pend * g * sin_theta * cos_theta) / denominator
+        theta_ddot = (
+            -u[0] * cos_theta - m_pend * length * omega**2 * sin_theta * cos_theta + (m_cart + m_pend) * g * sin_theta
+        ) / (length * denominator)
+
+        x_next = np.zeros_like(x)
+        x_next[0] = p + v * dt
+        x_next[1] = v + p_ddot * dt
+        x_next[2] = theta + omega * dt
+        x_next[3] = omega + theta_ddot * dt
+        return x_next
+
+    def run_mpc_loop() -> list[int]:
+        iterations_list = []
+
+        x = x_current.copy()
+        for _ in range(num_steps):
+            u = mpc.step(x)
+
+            try:
+                opti = getattr(mpc.ocp, "_opti", None)
+                if opti is not None:
+                    stats = opti.stats()
+                    iterations = stats.get("iter_count", -1)
+                else:
+                    iterations = -1
+            except Exception:  # noqa: BLE001
+                iterations = -1
+            iterations_list.append(iterations)
+
+            x = simulate_step(x, u)
+
+        return iterations_list
+
+    iterations_list = benchmark(run_mpc_loop)
+
+    valid_iters = [it for it in iterations_list if it >= 0]
+    if valid_iters:
+        benchmark.extra_info["avg_solver_iterations"] = sum(valid_iters) / len(valid_iters)
+        benchmark.extra_info["total_solver_iterations"] = sum(valid_iters)
+    else:
+        benchmark.extra_info["avg_solver_iterations"] = -1
+        benchmark.extra_info["total_solver_iterations"] = -1
