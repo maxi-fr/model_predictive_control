@@ -7,7 +7,15 @@ from numpy._typing import ArrayLike
 from model_predictive_control.ocp import OCP, LinearOCP
 
 
-class MPC:  # noqa: D101  TODO: fix
+class MPC:
+    """
+    Wrapper for executing nonlinear Model Predictive Control (MPC).
+
+    This class provides a high-level interface for closed-loop MPC simulations by repeatedly
+    solving an underlying nonlinear Optimal Control Problem (OCP) in a receding horizon fashion.
+    It handles OCP setup, trajectory warm-starting, and dimension validation.
+    """
+
     def __init__(
         self,
         ocp: OCP,
@@ -119,7 +127,15 @@ class MPC:  # noqa: D101  TODO: fix
         return u_opt_0
 
 
-class LinearMPC:  # noqa: D101  TODO: fix
+class LinearMPC:
+    """
+    Wrapper for executing linear Model Predictive Control (MPC).
+
+    This class provides a high-level interface for closed-loop MPC simulations by repeatedly
+    solving an underlying Linear Optimal Control Problem (LinearOCP) in a receding horizon fashion.
+    It handles LinearOCP setup, trajectory warm-starting, and dimension validation.
+    """
+
     def __init__(
         self,
         linear_ocp: LinearOCP,
