@@ -122,3 +122,37 @@ def test_experiment_batch_with_ref_list(
 
     assert isinstance(df, pd.DataFrame)
     assert len(df) == 2
+
+
+def test_simulate_invalid_x0(simple_mpc_setup: tuple[LinearMPC, LinearDynamics, int, int, int]) -> None:
+    mpc, dynamics, nx, _nu, _N = simple_mpc_setup
+    # Wrong dimension for x0
+    x0 = np.zeros(nx + 1)
+    num_steps = 5
+
+    with pytest.raises(ValueError, match=f"x0 must have length {nx}"):
+        simulate(mpc, dynamics, x0, num_steps)
+
+
+def test_simulate_invalid_long_x_ref(simple_mpc_setup: tuple[LinearMPC, LinearDynamics, int, int, int]) -> None:
+    mpc, dynamics, nx, _nu, _N = simple_mpc_setup
+    x0 = np.zeros(nx)
+    num_steps = 5
+
+    # Correct length but wrong inner dimension
+    x_ref = np.zeros((num_steps + _N, nx + 1))
+
+    with pytest.raises(ValueError, match=fr"Long x_ref must have shape \(>=num_steps\+N, {nx}\)"):
+        simulate(mpc, dynamics, x0, num_steps, x_ref=x_ref)
+
+
+def test_simulate_invalid_long_u_ref(simple_mpc_setup: tuple[LinearMPC, LinearDynamics, int, int, int]) -> None:
+    mpc, dynamics, nx, nu, _N = simple_mpc_setup
+    x0 = np.zeros(nx)
+    num_steps = 5
+
+    # Correct length but wrong inner dimension
+    u_ref = np.zeros((num_steps + _N - 1, nu + 1))
+
+    with pytest.raises(ValueError, match=fr"Long u_ref must have shape \(>=num_steps\+N-1, {nu}\)"):
+        simulate(mpc, dynamics, x0, num_steps, u_ref=u_ref)
