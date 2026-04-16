@@ -1,4 +1,4 @@
-# ruff: noqa: PLR0912, PLR0913, PLR0915, C901, TRY003, EM102, EM101, SIM102, SIM108, SLF001
+# ruff: noqa: PLR0912, PLR0913, PLR0915, C901, SLF001
 import datetime
 import time
 from collections.abc import Callable
@@ -21,12 +21,8 @@ class SimulationResult:
     """Dataclass to store the results of an MPC simulation."""
 
     X: npt.NDArray[np.float64]
-    """Actual state trajectory, shape: (num_steps + 1, nx)"""
-    U: npt.NDArray[np.float64]
-    """Actual control trajectory applied, shape: (num_steps, nu)"""
-    X_pred: npt.NDArray[np.float64]
     """Predicted state trajectories from MPC, shape: (num_steps, N + 1, nx)"""
-    U_pred: npt.NDArray[np.float64]
+    U: npt.NDArray[np.float64]
     """Predicted control trajectories from MPC, shape: (num_steps, N, nu)"""
     cost: npt.NDArray[np.float64]
     """Total predicted cost over the horizon at each step, shape: (num_steps,)"""
@@ -71,12 +67,10 @@ class SimulationResult:
             path = path.with_suffix(".npz")
 
         with np.load(path) as data:
-            # Reconstruct the dataclass fields
             kwargs = {}
             for key in data.files:
                 val = data[key]
                 if key == "status":
-                    # Convert status array back to list of strings
                     kwargs[key] = val.tolist()
                 else:
                     kwargs[key] = val
@@ -115,7 +109,8 @@ def simulate(
 
     x0_arr = np.asarray(x0, dtype=float).flatten()
     if x0_arr.shape != (nx,):
-        raise ValueError(f"x0 must have length {nx}")
+        msg = f"x0 must have length {nx}"
+        raise ValueError(msg)
 
     X = np.zeros((num_steps + 1, nx))
     U = np.zeros((num_steps, nu))
@@ -137,7 +132,8 @@ def simulate(
         if x_ref_arr.ndim == 2 and x_ref_arr.shape[0] >= num_steps + N:
             long_x_ref = True
             if x_ref_arr.shape[1] != nx:
-                raise ValueError(f"Long x_ref must have shape (>=num_steps+N, {nx})")
+                msg = f"Long x_ref must have shape (>=num_steps+N, {nx})"
+                raise ValueError(msg)
 
     # Pre-process u_ref
     u_ref_arr = None
@@ -147,29 +143,23 @@ def simulate(
         if u_ref_arr.ndim == 2 and u_ref_arr.shape[0] >= num_steps + N - 1:
             long_u_ref = True
             if u_ref_arr.shape[1] != nu:
-                raise ValueError(f"Long u_ref must have shape (>=num_steps+N-1, {nu})")
+                msg = f"Long u_ref must have shape (>=num_steps+N-1, {nu})"
+                raise ValueError(msg)
 
     # Extract stage cost function if possible
     stage_cost_func = None
-    if hasattr(mpc.ocp, "objective") and mpc.ocp.objective is not None:
-        if mpc.ocp.objective.stage_costs:
-            stage_cost_func = mpc.ocp.objective.stage_costs[0]
+    if hasattr(mpc.ocp, "objective") and mpc.ocp.objective is not None and mpc.ocp.objective.stage_costs:
+        stage_cost_func = mpc.ocp.objective.stage_costs[0]
 
     for k in range(num_steps):
         # Slice references if long
         xk_ref = None
         if x_ref_arr is not None:
-            if long_x_ref:
-                xk_ref = x_ref_arr[k : k + N + 1]
-            else:
-                xk_ref = x_ref_arr
+            xk_ref = x_ref_arr[k : k + N + 1] if long_x_ref else x_ref_arr
 
         uk_ref = None
         if u_ref_arr is not None:
-            if long_u_ref:
-                uk_ref = u_ref_arr[k : k + N]
-            else:
-                uk_ref = u_ref_arr
+            uk_ref = u_ref_arr[k : k + N] if long_u_ref else u_ref_arr
 
         start_time = time.perf_counter()
         u_opt = mpc.step(x_current, x_ref=xk_ref, u_ref=uk_ref)
@@ -178,7 +168,8 @@ def simulate(
         # Extract predictions
         X_opt, U_opt = mpc.get_last_open_loop_predictions()
         if X_opt is None or U_opt is None:
-            raise RuntimeError("MPC did not return open-loop predictions.")
+            msg = "MPC did not return open-loop predictions."
+            raise RuntimeError(msg)
 
         status = (
             mpc.ocp._solver_obj.stats()["return_status"]
@@ -225,14 +216,12 @@ def simulate(
         X[k + 1] = x_current
 
     return SimulationResult(
-        X=X,
-        U=U,
-        X_pred=X_pred,
-        U_pred=U_pred,
-        cost=cost,
-        stage_cost=stage_cost,
-        status=status_list,
-        solve_time=solve_time,
+        X_pred,
+        U_pred,
+        cost,
+        stage_cost,
+        status_list,
+        solve_time,
     )
 
 
