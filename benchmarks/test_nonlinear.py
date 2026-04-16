@@ -1,7 +1,5 @@
 """Benchmark for non-linear OCP."""
 
-from typing import Any
-
 import casadi as ca
 import numpy as np
 
@@ -84,11 +82,7 @@ def test_nonlinear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def]
     ocp = setup_inverted_pendulum_ocp()
     x0_val = np.array([0.0, 0.0, 0.5, 0.0])
 
-    def solve_ocp() -> tuple[Any, Any, str]:
-        return ocp.solve(x0_val)
-
-    # We use benchmark to run solve_ocp repeatedly and measure time
-    result = benchmark(solve_ocp)
+    result = benchmark(ocp.solve, x0_val)
 
     # Result is a tuple (X_opt, U_opt, status)
     _, _, status = result

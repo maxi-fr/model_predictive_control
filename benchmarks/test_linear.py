@@ -123,10 +123,7 @@ def test_linear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def] # 
     ocp = mpc.ocp
     x0_val = np.array([0.0, 0.0, 0.5, 0.0])
 
-    def solve_ocp() -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
-        return ocp.solve(x0_val)
-
-    result = benchmark(solve_ocp)
+    result = benchmark(ocp.solve, x0_val)
     _, _, status = result
     assert "solved" in status.lower() or "success" in status.lower()
 
