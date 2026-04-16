@@ -112,9 +112,6 @@ class MPC:
         self.last_X_opt = X_opt
         self.last_U_opt = U_opt
 
-        self.last_X_opt = X_opt
-        self.last_U_opt = U_opt
-
         # Shift guesses for the next step
         self._X_guess = np.roll(X_opt, -1, axis=0)
         self._X_guess[-1, :] = self._X_guess[-2, :]
@@ -224,9 +221,6 @@ class LinearMPC:
         ):
             msg = f"LinearOCP solve failed with status: {status}"
             raise RuntimeError(msg)
-
-        self.last_X_opt = X_opt
-        self.last_U_opt = U_opt
 
         self.last_X_opt = X_opt
         self.last_U_opt = U_opt
