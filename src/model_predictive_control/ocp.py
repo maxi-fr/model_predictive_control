@@ -690,7 +690,7 @@ class OCP:
             self._opti.set_initial(self._U, U_guess.T)
 
         try:
-            sol = self._opti.solve()
+            sol: ca.OptiSol = self._opti.solve()
             X_opt = sol.value(self._X)
             U_opt = sol.value(self._U)
             status: str = sol.stats()["return_status"]
