@@ -35,13 +35,13 @@ def test_linear_ocp_solve_multiple_shooting() -> None:
     )
 
     X, U, status = ocp.solve(np.array([1.0, 0.0]))
-    assert status == "success"
+    assert status["solved_successfully"]
     assert X.shape == (6, 2)
     assert U.shape == (5, 1)
 
     # Test warm start functionality
     X_warm, U_warm, status_warm = ocp.solve(np.array([1.0, 0.0]), X_guess=X, U_guess=U)
-    assert status_warm == "success"
+    assert status_warm["solved_successfully"]
     np.testing.assert_allclose(X, X_warm, atol=1e-5)
     np.testing.assert_allclose(U, U_warm, atol=1e-5)
 
@@ -67,13 +67,13 @@ def test_linear_ocp_solve_single_shooting() -> None:
     )
 
     X, U, status = ocp.solve(np.array([1.0, 0.0]))
-    assert status == "success"
+    assert status["solved_successfully"]
     assert X.shape == (6, 2)
     assert U.shape == (5, 1)
 
     # Test warm start functionality
     X_warm, U_warm, status_warm = ocp.solve(np.array([1.0, 0.0]), X_guess=X, U_guess=U)
-    assert status_warm == "success"
+    assert status_warm["solved_successfully"]
     np.testing.assert_allclose(X, X_warm, atol=1e-5)
     np.testing.assert_allclose(U, U_warm, atol=1e-5)
 
@@ -94,7 +94,7 @@ def test_linear_ocp_continuous(method: str) -> None:
     )
 
     _X, _U, status = ocp.solve(np.array([1.0, 0.0]))
-    assert status == "success"
+    assert status["solved_successfully"]
 
 
 @pytest.mark.parametrize("solver", ["qrqp", "osqp"])
@@ -113,7 +113,7 @@ def test_linear_ocp_solvers(solver: str) -> None:
     )
 
     _X, _U, status = ocp.solve(np.array([1.0, 0.0]))
-    assert "success" in status or status == "solved"  # osqp returns "solved" instead of "success"
+    assert status["solved_successfully"]  # osqp returns "solved" instead of "success"
 
 
 def test_linear_ocp_constraints() -> None:
@@ -137,7 +137,7 @@ def test_linear_ocp_constraints() -> None:
     )
 
     X, U, status = ocp.solve(np.array([1.5, 0.0]))
-    assert status == "success"
+    assert status["solved_successfully"]
 
     ocp_ss = LinearOCP(N=5, dt=0.1, dynamics=LinearDynamics(A, B), Q=Q, R=R, constraints=cl)
     ocp_ss.setup(
@@ -148,7 +148,7 @@ def test_linear_ocp_constraints() -> None:
     )
 
     X_ss, U_ss, status_ss = ocp_ss.solve(np.array([1.5, 0.0]))
-    assert status_ss == "success"
+    assert status_ss["solved_successfully"]
     np.testing.assert_allclose(X, X_ss, atol=1e-5)
     np.testing.assert_allclose(U, U_ss, atol=1e-5)
 
@@ -175,7 +175,7 @@ def test_linear_ocp_time_varying() -> None:
     )
 
     X_ms, U_ms, status_ms = ocp.solve(np.array([1.0, 0.0]))
-    assert status_ms == "success"
+    assert status_ms["solved_successfully"]
 
     ocp_ss = LinearOCP(N=5, dt=0.1, dynamics=LinearDynamics(A_tv, B_tv), Q=Q, R=R)
     ocp_ss.setup(
@@ -186,7 +186,7 @@ def test_linear_ocp_time_varying() -> None:
     )
 
     X_ss, U_ss, status_ss = ocp_ss.solve(np.array([1.0, 0.0]))
-    assert status_ss == "success"
+    assert status_ss["solved_successfully"]
 
     np.testing.assert_allclose(X_ms, X_ss, atol=1e-5)
     np.testing.assert_allclose(U_ms, U_ss, atol=1e-5)

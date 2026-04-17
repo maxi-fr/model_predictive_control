@@ -35,7 +35,7 @@ def test_ocp_with_tracking_reference() -> None:
 
     X_opt, _U_opt, status = ocp.solve(x0, x_ref=X_ref, u_ref=U_ref)
 
-    assert status == "Solve_Succeeded"
+    assert status["solved_successfully"]
     # The state should move towards the reference [2.0, 2.0]
     assert X_opt[-1, 0] > 0.5
     assert X_opt[-1, 1] > 0.5
@@ -68,7 +68,7 @@ def test_linear_ocp_with_tracking_reference() -> None:
 
     X_opt, _U_opt, status = lin_ocp.solve(x0, x_ref=X_ref, u_ref=U_ref)
 
-    assert status == "success"
+    assert status["solved_successfully"]
     # It should track X_ref
     assert np.allclose(X_opt[-1], [1.0, 1.0], atol=0.2)
 

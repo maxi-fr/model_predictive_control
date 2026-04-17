@@ -1,4 +1,4 @@
-# ruff: noqa: PLR0912, PLR0913, PLR0915, C901, TRY003, EM102, EM101, SIM102, SIM108, SLF001
+# ruff: noqa: PLR0912, PLR0913, PLR0915, C901, TRY003, EM102, EM101, SIM102, SIM108
 import datetime
 import time
 from collections.abc import Callable
@@ -180,11 +180,12 @@ def simulate(
         if X_opt is None or U_opt is None:
             raise RuntimeError("MPC did not return open-loop predictions.")
 
-        status = (
-            mpc.ocp._solver_obj.stats()["return_status"]
-            if hasattr(mpc.ocp, "_solver_obj") and mpc.ocp._solver_obj is not None
-            else "unknown"
-        )
+        status = "unknown"
+        if hasattr(mpc, "last_status") and mpc.last_status is not None:
+            if mpc.last_status.get("solved_successfully"):
+                status = mpc.last_status.get("return_status", "success")
+            else:
+                status = mpc.last_status.get("return_status", "failure")
 
         # Calculate costs
         traj_cost = mpc.ocp.calculate_trajectory_cost(X_opt, U_opt, xk_ref, uk_ref)

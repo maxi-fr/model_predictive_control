@@ -134,7 +134,7 @@ def test_ocp_setup_and_solve(method: str, dynamics_type: str) -> None:
     x0 = np.array([1.0, 0.0])
     X_opt, U_opt, status = ocp.solve(x0)
 
-    assert status == "Solve_Succeeded"
+    assert status["solved_successfully"]
     assert X_opt.shape == (11, 2)  # N+1 points, nx=2
     assert U_opt.shape == (10, 1)  # N points, nu=1
 
@@ -144,7 +144,7 @@ def test_ocp_setup_and_solve(method: str, dynamics_type: str) -> None:
 
     # Test warm start functionality
     X_warm, U_warm, status_warm = ocp.solve(x0, X_guess=X_opt, U_guess=U_opt)
-    assert status_warm == "Solve_Succeeded"
+    assert status_warm["solved_successfully"]
     np.testing.assert_allclose(X_opt, X_warm, atol=1e-5)
     np.testing.assert_allclose(U_opt, U_warm, atol=1e-5)
 
@@ -184,7 +184,7 @@ def test_ocp_custom_solver_opts(solver: str) -> None:
 
     if solver == "ipopt":
         # IPOPT should reach max iter and fail gracefully
-        assert "Maximum_Iterations_Exceeded" in status or "Solve_Failed" in status
+        assert not status["solved_successfully"]
 
 
 def test_linearize_method() -> None:
@@ -279,7 +279,7 @@ def test_linearize_equivalence() -> None:
 
     ocp.setup(method="multiple_shooting", dynamics_type="discrete", solver="ipopt", solver_opts={"print_level": 0})
     X_nl, U_nl, status_nl = ocp.solve(np.array([1.0, 0.0]))
-    assert status_nl == "Solve_Succeeded"
+    assert status_nl["solved_successfully"]
 
     # Linearize around 0
     x_bar = np.array([0.0, 0.0])
@@ -293,7 +293,7 @@ def test_linearize_equivalence() -> None:
         solver_opts={"print_iter": False, "print_header": False},
     )
     X_lin, U_lin, status_lin = lin_ocp.solve(np.array([1.0, 0.0]))
-    assert status_lin == "success"
+    assert status_lin["solved_successfully"]
 
     np.testing.assert_allclose(X_nl, X_lin, atol=1e-10)
     np.testing.assert_allclose(U_nl, U_lin, atol=1e-10)
@@ -357,7 +357,7 @@ def test_riccati_equivalence() -> None:
 
     x0 = np.array([2.0, -1.0])
     X_lin, U_lin, status_lin = lin_ocp.solve(x0)
-    assert status_lin == "success"
+    assert status_lin["solved_successfully"]
 
     # Riccati solution
     K_gains, _ = solve_riccati(A, B, Q, R, N, Q)

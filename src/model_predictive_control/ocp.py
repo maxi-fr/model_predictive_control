@@ -626,14 +626,14 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(  # noqa: PLR0912, C901, TODO: refactor to fix issues
+    def solve(  # noqa: PLR0912, PLR0915, C901, TODO: refactor to fix issues
         self,
         x0: ArrayLike,
         X_guess: ArrayLike | None = None,
         U_guess: ArrayLike | None = None,
         x_ref: ArrayLike | None = None,
         u_ref: ArrayLike | None = None,
-    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], dict[str, Any]]:
         """
         Solves the OCP for a given initial state.
 
@@ -649,7 +649,7 @@ class OCP:
             Tuple of (X_opt, U_opt, status)
             - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
             - U_opt: numpy array of optimal control trajectory of shape (N, nu)
-            - status: string indicating solver status
+            - status: dictionary containing a "solved_successfully" boolean and internal solver statistics
         """
         if self._opti is None:
             msg = "OCP has not been set up. Call setup() first."
@@ -693,12 +693,18 @@ class OCP:
             sol: ca.OptiSol = self._opti.solve()
             X_opt = sol.value(self._X)
             U_opt = sol.value(self._U)
-            status: str = sol.stats()["return_status"]
+            status_dict = sol.stats()
+            status_dict["solved_successfully"] = True
         except Exception as e:  # noqa: BLE001
             # If solve fails, return the values at the last iteration
             X_opt = self._opti.debug.value(self._X)
             U_opt = self._opti.debug.value(self._U)
-            status = f"Solve_Failed: {e!s}"
+            try:
+                status_dict = self._opti.stats()
+            except Exception:  # noqa: BLE001
+                status_dict = {}
+            status_dict["solved_successfully"] = False
+            status_dict["error_message"] = str(e)
 
         # Ensure 2D arrays even if nx=1 or nu=1
         if isinstance(X_opt, np.ndarray) and X_opt.ndim == 1:
@@ -706,7 +712,7 @@ class OCP:
         if isinstance(U_opt, np.ndarray) and U_opt.ndim == 1:
             U_opt = U_opt.reshape(1, -1)
 
-        return X_opt.T, U_opt.T, status
+        return X_opt.T, U_opt.T, status_dict
 
     def calculate_trajectory_cost(  # noqa: C901, PLR0912
         self,
@@ -1152,7 +1158,7 @@ class LinearOCP:
         U_guess: ArrayLike | None = None,
         x_ref: ArrayLike | None = None,
         u_ref: ArrayLike | None = None,
-    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], dict[str, Any]]:
         """
         Solves the Linear OCP for a given initial state.
 
@@ -1168,7 +1174,7 @@ class LinearOCP:
             Tuple of (X_opt, U_opt, status)
             - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
             - U_opt: numpy array of optimal control trajectory of shape (N, nu)
-            - status: string indicating solver status
+            - status: dictionary containing a "solved_successfully" boolean and internal solver statistics
         """
         if self._solver_obj is None:
             msg = "LinearOCP has not been set up. Call setup() first."
@@ -1261,7 +1267,6 @@ class LinearOCP:
             res = self._solver_obj(**kwargs)
 
             z_opt = np.array(res["x"]).flatten()
-            status = self._solver_obj.stats()["return_status"]
 
             # Unpack z = [x_0, u_0, x_1, u_1, ..., u_{N-1}, x_N]
             X_opt = np.zeros((self.N + 1, self.nx))
@@ -1342,7 +1347,6 @@ class LinearOCP:
             res = self._solver_obj(**kwargs)
 
             U_vec = np.array(res["x"]).flatten()
-            status = self._solver_obj.stats()["return_status"]
 
             # Reconstruct X_opt and U_opt
             U_opt = U_vec.reshape((self.N, self.nu))
@@ -1353,7 +1357,18 @@ class LinearOCP:
             msg = f"Unknown method: {self._method}"
             raise ValueError(msg)
 
-        return X_opt, U_opt, status
+        status_dict = self._solver_obj.stats()
+        status_str = status_dict.get("return_status", "")
+        if (
+            "success" not in status_str.lower()
+            and "optimal" not in status_str.lower()
+            and "solved" not in status_str.lower()
+        ):
+            status_dict["solved_successfully"] = False
+        else:
+            status_dict["solved_successfully"] = True
+
+        return X_opt, U_opt, status_dict
 
     def calculate_trajectory_cost(
         self,

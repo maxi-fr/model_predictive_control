@@ -51,6 +51,7 @@ class MPC:  # noqa: D101  TODO: fix
 
         self.last_X_opt: np.ndarray | None = None
         self.last_U_opt: np.ndarray | None = None
+        self.last_status: dict[str, Any] | None = None
 
     def get_last_open_loop_predictions(self) -> tuple[np.ndarray | None, np.ndarray | None]:
         """
@@ -87,17 +88,9 @@ class MPC:  # noqa: D101  TODO: fix
             x0=x_current_arr, X_guess=self._X_guess, U_guess=self._U_guess, x_ref=x_ref, u_ref=u_ref
         )
 
-        # Ipopt returns "Solve_Succeeded" on success, but different solvers might have different messages.
-        # Check for success by looking for "success" or "succeeded" (case-insensitive) in the status string.
-        # Note: sometimes IPOPT's failure message contains "return_success(accept_limit) failed", so
-        # we also check if it starts with "solve_failed".
-        # Fail loudly if solve fails.
-        if "solve_failed" in status.lower() or (
-            "success" not in status.lower()
-            and "succeeded" not in status.lower()
-            and "optimal" not in status.lower()
-            and "solved" not in status.lower()
-        ):
+        self.last_status = status
+
+        if not status.get("solved_successfully"):
             msg = f"OCP solve failed with status: {status}"
             raise RuntimeError(msg)
 
@@ -164,6 +157,7 @@ class LinearMPC:  # noqa: D101  TODO: fix
 
         self.last_X_opt: np.ndarray | None = None
         self.last_U_opt: np.ndarray | None = None
+        self.last_status: dict[str, Any] | None = None
 
     def get_last_open_loop_predictions(self) -> tuple[np.ndarray | None, np.ndarray | None]:
         """
@@ -200,12 +194,9 @@ class LinearMPC:  # noqa: D101  TODO: fix
             x0=x_current_arr, X_guess=self._X_guess, U_guess=self._U_guess, x_ref=x_ref, u_ref=u_ref
         )
 
-        if "solve_failed" in status.lower() or (
-            "success" not in status.lower()
-            and "succeeded" not in status.lower()
-            and "optimal" not in status.lower()
-            and "solved" not in status.lower()
-        ):
+        self.last_status = status
+
+        if not status.get("solved_successfully"):
             msg = f"LinearOCP solve failed with status: {status}"
             raise RuntimeError(msg)
 
