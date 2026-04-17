@@ -694,7 +694,7 @@ class OCP:
             X_opt = sol.value(self._X)
             U_opt = sol.value(self._U)
             status: str = sol.stats()["return_status"]
-        except Exception as e:  # noqa: BLE001
+        except RuntimeError as e:
             # If solve fails, return the values at the last iteration
             X_opt = self._opti.debug.value(self._X)
             U_opt = self._opti.debug.value(self._U)
