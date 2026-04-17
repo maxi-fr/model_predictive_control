@@ -835,6 +835,18 @@ class LinearOCP:
         self.Qf = (self.Q if self.Q.ndim == 2 else self.Q[-1]).copy() if Qf is None else np.asarray(Qf, dtype=float)
         self.qf = (self.q if self.q.ndim == 1 else self.q[-1]).copy() if qf is None else np.asarray(qf, dtype=float)
 
+        # Broadcast arrays to ensure they have the time dimension (N, ...)
+        if self.Q.ndim == 2:
+            self.Q = np.broadcast_to(self.Q, (self.N, *self.Q.shape))
+        if self.R.ndim == 2:
+            self.R = np.broadcast_to(self.R, (self.N, *self.R.shape))
+        if self.q.ndim == 1:
+            self.q = np.broadcast_to(self.q, (self.N, *self.q.shape))
+        if self.r.ndim == 1:
+            self.r = np.broadcast_to(self.r, (self.N, *self.r.shape))
+        if self.N_cross.ndim == 2:
+            self.N_cross = np.broadcast_to(self.N_cross, (self.N, *self.N_cross.shape))
+
         self.constraints = constraints if constraints is not None else ConstraintList()
 
         self.validate_dimensions()
@@ -1216,9 +1228,9 @@ class LinearOCP:
             # Apply tracking reference shifts to the linear cost term g_vec
             if X_ref_arr is not None or U_ref_arr is not None:
                 for k in range(self.N):
-                    Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
-                    Rk = self.R[k] if self.R.ndim == 3 else self.R
-                    N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+                    Qk = self.Q[k]
+                    Rk = self.R[k]
+                    N_cross_k = self.N_cross[k]
 
                     idx_x = k * (self.nx + self.nu)
                     idx_u = idx_x + self.nx
@@ -1282,11 +1294,11 @@ class LinearOCP:
             r_bar = np.zeros(self.N * self.nu)
 
             for k in range(self.N):
-                Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
-                Rk = self.R[k] if self.R.ndim == 3 else self.R
-                N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
-                qk = self.q[k] if self.q.ndim == 2 else self.q
-                rk = self.r[k] if self.r.ndim == 2 else self.r
+                Qk = self.Q[k]
+                Rk = self.R[k]
+                N_cross_k = self.N_cross[k]
+                qk = self.q[k]
+                rk = self.r[k]
 
                 if X_ref_arr is not None:
                     qk = qk - Qk @ X_ref_arr[k]
@@ -1394,11 +1406,11 @@ class LinearOCP:
         total_cost = 0.0
 
         for k in range(self.N):
-            Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
-            Rk = self.R[k] if self.R.ndim == 3 else self.R
-            N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
-            qk = self.q[k] if self.q.ndim == 2 else self.q
-            rk = self.r[k] if self.r.ndim == 2 else self.r
+            Qk = self.Q[k]
+            Rk = self.R[k]
+            N_cross_k = self.N_cross[k]
+            qk = self.q[k]
+            rk = self.r[k]
 
             x_k = X_arr[k]
             u_k = U_arr[k]
