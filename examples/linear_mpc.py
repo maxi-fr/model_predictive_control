@@ -127,7 +127,7 @@ current_x = x0_val
 
 for k in range(N_sim):
     # Step the MPC
-    u_k = mpc.step(current_x)
+    u_k, _status = mpc.step(current_x)
 
     # Store predictions for plotting
     X_opt, U_opt = mpc.get_last_open_loop_predictions()

@@ -1,4 +1,4 @@
-# ruff: noqa: PLR0912, PLR0913, PLR0915, C901, SLF001
+# ruff: noqa: PLR0912, PLR0913, PLR0915, C901
 import datetime
 import time
 from collections.abc import Callable
@@ -162,7 +162,7 @@ def simulate(
             uk_ref = u_ref_arr[k : k + N] if long_u_ref else u_ref_arr
 
         start_time = time.perf_counter()
-        u_opt = mpc.step(x_current, x_ref=xk_ref, u_ref=uk_ref)
+        u_opt, status = mpc.step(x_current, x_ref=xk_ref, u_ref=uk_ref)
         end_time = time.perf_counter()
 
         # Extract predictions
@@ -170,12 +170,6 @@ def simulate(
         if X_opt is None or U_opt is None:
             msg = "MPC did not return open-loop predictions."
             raise RuntimeError(msg)
-
-        status = (
-            mpc.ocp._solver_obj.stats()["return_status"]
-            if hasattr(mpc.ocp, "_solver_obj") and mpc.ocp._solver_obj is not None
-            else "unknown"
-        )
 
         # Calculate costs
         traj_cost = mpc.ocp.calculate_trajectory_cost(X_opt, U_opt, xk_ref, uk_ref)

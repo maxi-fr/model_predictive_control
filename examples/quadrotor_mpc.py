@@ -229,7 +229,7 @@ for k in range(N_sim):
     u_ref_horizon = U_ref_full[k : k + N, :]
 
     # Step MPC
-    u_k = mpc.step(x_current=x_current, x_ref=x_ref_horizon, u_ref=u_ref_horizon)
+    u_k, _status = mpc.step(x_current=x_current, x_ref=x_ref_horizon, u_ref=u_ref_horizon)
 
     # Store open loop predictions
     X_open_loop[k, :, :] = mpc.last_X_opt
