@@ -48,12 +48,13 @@ class SimpleMLPDynamics(nn.Module):
             self.net[2].weight[0, 1] = 0.1  # type: ignore[operator]
             self.net[2].bias.data.fill_(0.0)  # type: ignore[operator]
 
-    def forward(self, x_u: torch.Tensor) -> torch.Tensor:
-        # L4CasADi provides inputs with shape (nx+nu, 1) if unbatched
-        # or it uses shape logic that requires us to flatten for a standard nn.Linear
+    def forward(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        # We concatenate x and u internally, keeping the network interface clean
+        x_u = torch.cat([torch.reshape(x, (-1,)), torch.reshape(u, (-1,))], dim=0)
+
         # Output must be a 2D matrix (nx, 1) for unbatched l4casadi
         # We must use torch.reshape to avoid issues with fx tracing mutations/views
-        return torch.reshape(self.net(torch.reshape(x_u, (-1,))), (self.nx, 1))
+        return torch.reshape(self.net(x_u), (self.nx, 1))
 
 
 nx = 1
