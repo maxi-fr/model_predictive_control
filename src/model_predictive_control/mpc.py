@@ -75,9 +75,9 @@ class MPC:
 
     def step(
         self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None
-    ) -> npt.NDArray[np.float64]:
+    ) -> tuple[npt.NDArray[np.float64], str]:
         """
-        Solves the MPC problem for the current state and returns the control action.
+        Solves the MPC problem for the current state and returns the control action and solver status.
 
         Args:
             x_current: Current state as a numpy array or list.
@@ -86,7 +86,9 @@ class MPC:
 
         Returns
         -------
-            The control action to apply, as a numpy array of shape (nu,).
+            A tuple (u_opt, status) where:
+            - u_opt: The control action to apply, as a numpy array of shape (nu,).
+            - status: The status string returned by the solver.
         """
         x_current_arr = np.asarray(x_current, dtype=float).flatten()
         if x_current_arr.shape != (self.nx,):
@@ -123,7 +125,7 @@ class MPC:
 
         u_opt_0: npt.NDArray[np.float64] = U_opt[0]
 
-        return u_opt_0
+        return u_opt_0, status
 
 
 class LinearMPC(MPC):

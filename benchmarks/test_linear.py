@@ -87,7 +87,7 @@ def test_linear_mpc_step(benchmark) -> None:  # type: ignore[no-untyped-def] # n
 
         x = x_current.copy()
         for _ in range(num_steps):
-            u = mpc.step(x)
+            u, _status = mpc.step(x)
 
             # Record iterations if available (depends on OSQP solver wrapper in casadi)
             try:
