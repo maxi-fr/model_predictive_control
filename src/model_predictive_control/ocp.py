@@ -56,6 +56,16 @@ class OCP:
 
         self._nx, self._nu = self.validate_dimensions()
 
+    @property
+    def nx(self) -> int:
+        """Return the number of states."""
+        return self._nx
+
+    @property
+    def nu(self) -> int:
+        """Return the number of controls."""
+        return self._nu
+
     def validate_dimensions(self) -> tuple[int, int]:
         """Validate all casadi functions and returns nx and nu."""
         if self.dynamics.f.n_in() < 2:
@@ -401,7 +411,30 @@ class OCP:
             constraints=lin_constraints,
         )
 
-    def setup(  # noqa: D102, PLR0915, PLR0912, PLR0913, C901 TODO: fix issues
+    def _get_stage_cost(self, k: int, x_k: ca.MX, u_k: ca.MX) -> ca.MX:
+        stage_cost = self.objective.stage_costs[k]
+        if stage_cost.has_reference:
+            assert self._x_ref_param is not None
+            assert self._u_ref_param is not None
+            return stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+        return stage_cost.f(x_k, u_k)
+
+    def _apply_stage_constraints(self, k: int, x_k: ca.MX, u_k: ca.MX) -> None:
+        for constraint, time_indices in self.constraints:
+            resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
+            if k in resolved_indices:
+                if isinstance(constraint, StateConstraint):
+                    val = constraint.f(x_k)
+                elif isinstance(constraint, ControlConstraint):
+                    val = constraint.f(u_k)
+                elif isinstance(constraint, Constraint):
+                    val = constraint.f(x_k, u_k)
+                if constraint.is_equality:
+                    self._opti.subject_to(val == 0)
+                else:
+                    self._opti.subject_to(val <= 0)
+
+    def setup(  # noqa: D102, PLR0915, PLR0912, PLR0913, C901
         self,
         method: str = "multiple_shooting",
         dynamics_type: str = "continuous",
@@ -454,30 +487,8 @@ class OCP:
             for k in range(self.N):
                 u_k = self._U[:, k]
 
-                # Cost
-                stage_cost = self.objective.stage_costs[k]
-                if stage_cost.has_reference:
-                    assert self._x_ref_param is not None
-                    assert self._u_ref_param is not None
-                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
-                else:
-                    cost += stage_cost.f(x_k, u_k)
-
-                # Constraints
-                for constraint, time_indices in self.constraints:
-                    resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
-                    if k in resolved_indices:
-                        if isinstance(constraint, StateConstraint):
-                            val = constraint.f(x_k)
-                        elif isinstance(constraint, ControlConstraint):
-                            val = constraint.f(u_k)
-                        elif isinstance(constraint, Constraint):
-                            val = constraint.f(x_k, u_k)
-
-                        if constraint.is_equality:
-                            self._opti.subject_to(val == 0)
-                        else:
-                            self._opti.subject_to(val <= 0)
+                cost += self._get_stage_cost(k, x_k, u_k)
+                self._apply_stage_constraints(k, x_k, u_k)
 
                 # Dynamics
                 x_k = dyn_func(x_k, u_k)
@@ -494,30 +505,8 @@ class OCP:
                 x_k = self._X[:, k]
                 u_k = self._U[:, k]
 
-                # Cost
-                stage_cost = self.objective.stage_costs[k]
-                if stage_cost.has_reference:
-                    assert self._x_ref_param is not None
-                    assert self._u_ref_param is not None
-                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
-                else:
-                    cost += stage_cost.f(x_k, u_k)
-
-                # Constraints
-                for constraint, time_indices in self.constraints:
-                    resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
-                    if k in resolved_indices:
-                        if isinstance(constraint, StateConstraint):
-                            val = constraint.f(x_k)
-                        elif isinstance(constraint, ControlConstraint):
-                            val = constraint.f(u_k)
-                        elif isinstance(constraint, Constraint):
-                            val = constraint.f(x_k, u_k)
-
-                        if constraint.is_equality:
-                            self._opti.subject_to(val == 0)
-                        else:
-                            self._opti.subject_to(val <= 0)
+                cost += self._get_stage_cost(k, x_k, u_k)
+                self._apply_stage_constraints(k, x_k, u_k)
 
                 # Dynamics gap closing
                 x_next = dyn_func(x_k, u_k)
@@ -540,30 +529,8 @@ class OCP:
                 x_k_next = self._X[:, k + 1]
                 u_k = self._U[:, k]
 
-                # Cost
-                stage_cost = self.objective.stage_costs[k]
-                if stage_cost.has_reference:
-                    assert self._x_ref_param is not None
-                    assert self._u_ref_param is not None
-                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
-                else:
-                    cost += stage_cost.f(x_k, u_k)
-
-                # Constraints
-                for constraint, time_indices in self.constraints:
-                    resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
-                    if k in resolved_indices:
-                        if isinstance(constraint, StateConstraint):
-                            val = constraint.f(x_k)
-                        elif isinstance(constraint, ControlConstraint):
-                            val = constraint.f(u_k)
-                        elif isinstance(constraint, Constraint):
-                            val = constraint.f(x_k, u_k)
-
-                        if constraint.is_equality:
-                            self._opti.subject_to(val == 0)
-                        else:
-                            self._opti.subject_to(val <= 0)
+                cost += self._get_stage_cost(k, x_k, u_k)
+                self._apply_stage_constraints(k, x_k, u_k)
 
                 # Hermite-Simpson collocation point
                 f_k = self.dynamics(x_k, u_k)
