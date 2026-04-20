@@ -208,3 +208,9 @@ __marimo__/
 
 # Experiment results
 results/
+
+# L4CasADi generated artifacts
+_l4c_generated/
+*.pt
+*.cpp
+libl4casadi_f.so
