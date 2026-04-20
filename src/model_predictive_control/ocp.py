@@ -56,6 +56,16 @@ class OCP:
 
         self._nx, self._nu = self.validate_dimensions()
 
+    @property
+    def nx(self) -> int:
+        """Return the number of states."""
+        return self._nx
+
+    @property
+    def nu(self) -> int:
+        """Return the number of controls."""
+        return self._nu
+
     def validate_dimensions(self) -> tuple[int, int]:
         """Validate all casadi functions and returns nx and nu."""
         if self.dynamics.f.n_in() < 2:
