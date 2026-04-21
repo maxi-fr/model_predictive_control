@@ -429,10 +429,11 @@ class OCP:
                     val = constraint.f(u_k)
                 elif isinstance(constraint, Constraint):
                     val = constraint.f(x_k, u_k)
-                if constraint.is_equality:
-                    self._opti.subject_to(val == 0)
-                else:
-                    self._opti.subject_to(val <= 0)
+                if self._opti is not None:
+                    if constraint.is_equality:
+                        self._opti.subject_to(val == 0)
+                    else:
+                        self._opti.subject_to(val <= 0)
 
     def setup(  # noqa: D102, PLR0915, PLR0912, PLR0913, C901
         self,
@@ -563,19 +564,19 @@ class OCP:
                 if isinstance(constraint, StateConstraint):
                     val = constraint.f(x_N)
                 elif isinstance(constraint, Constraint):
-                    # For terminal constraints that incorrectly use f(x, u), we can't properly evaluate u_N
-                    # Since this is poor practice, we pass a dummy, but ideally users use StateConstraint
-                    dummy_u = ca.MX.zeros(nu)
-                    val = constraint.f(x_N, dummy_u)
+                    msg = "Terminal constraints cannot depend on control u. Use StateConstraint instead."
+                    raise ValueError(msg)
                 else:
                     continue  # ControlConstraint doesn't make sense at terminal step
 
-                if constraint.is_equality:
-                    self._opti.subject_to(val == 0)
-                else:
-                    self._opti.subject_to(val <= 0)
+                if self._opti is not None:
+                    if constraint.is_equality:
+                        self._opti.subject_to(val == 0)
+                    else:
+                        self._opti.subject_to(val <= 0)
 
-        self._opti.minimize(cost)
+        if self._opti is not None:
+            self._opti.minimize(cost)
 
         # Set up solver options
         p_opts = {"expand": True}
