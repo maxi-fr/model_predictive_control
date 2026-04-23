@@ -594,7 +594,41 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(  # noqa: PLR0912, C901, TODO: refactor to fix issues
+    def _set_reference_parameters(self, x_ref: ArrayLike | None, u_ref: ArrayLike | None) -> None:
+        if self._x_ref_param is not None:
+            if x_ref is None:
+                x_ref = np.zeros((self.N + 1, self._nx))
+            x_ref_arr = np.asarray(x_ref, dtype=float)
+            if x_ref_arr.shape != (self.N + 1, self._nx):
+                msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
+                raise ValueError(msg)
+            self._opti.set_value(self._x_ref_param, x_ref_arr.T)
+
+        if self._u_ref_param is not None:
+            if u_ref is None:
+                u_ref = np.zeros((self.N, self._nu))
+            u_ref_arr = np.asarray(u_ref, dtype=float)
+            if u_ref_arr.shape != (self.N, self._nu):
+                msg = f"u_ref must have shape ({self.N}, {self._nu})"
+                raise ValueError(msg)
+            self._opti.set_value(self._u_ref_param, u_ref_arr.T)
+
+    def _set_initial_guesses(self, X_guess: ArrayLike | None, U_guess: ArrayLike | None) -> None:
+        if X_guess is not None:
+            X_guess_arr = np.asarray(X_guess)
+            if X_guess_arr.shape != (self.N + 1, self._nx):
+                msg = f"X_guess must have shape ({self.N + 1}, {self._nx})"
+                raise ValueError(msg)
+            self._opti.set_initial(self._X, X_guess_arr.T)
+
+        if U_guess is not None:
+            U_guess_arr = np.asarray(U_guess)
+            if U_guess_arr.shape != (self.N, self._nu):
+                msg = f"U_guess must have shape ({self.N}, {self._nu})"
+                raise ValueError(msg)
+            self._opti.set_initial(self._U, U_guess_arr.T)
+
+    def solve(
         self,
         x0: ArrayLike,
         X_guess: ArrayLike | None = None,
@@ -625,37 +659,8 @@ class OCP:
 
         self._opti.set_value(self._x0_param, x0)
 
-        if self._x_ref_param is not None:
-            if x_ref is None:
-                x_ref = np.zeros((self.N + 1, self._nx))
-            x_ref_arr = np.asarray(x_ref, dtype=float)
-            if x_ref_arr.shape != (self.N + 1, self._nx):
-                msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
-                raise ValueError(msg)
-            self._opti.set_value(self._x_ref_param, x_ref_arr.T)
-
-        if self._u_ref_param is not None:
-            if u_ref is None:
-                u_ref = np.zeros((self.N, self._nu))
-            u_ref_arr = np.asarray(u_ref, dtype=float)
-            if u_ref_arr.shape != (self.N, self._nu):
-                msg = f"u_ref must have shape ({self.N}, {self._nu})"
-                raise ValueError(msg)
-            self._opti.set_value(self._u_ref_param, u_ref_arr.T)
-
-        if X_guess is not None:
-            X_guess = np.asarray(X_guess)
-            if X_guess.shape != (self.N + 1, self._nx):
-                msg = f"X_guess must have shape ({self.N + 1}, {self._nx})"
-                raise ValueError(msg)
-            self._opti.set_initial(self._X, X_guess.T)
-
-        if U_guess is not None:
-            U_guess = np.asarray(U_guess)
-            if U_guess.shape != (self.N, self._nu):
-                msg = f"U_guess must have shape ({self.N}, {self._nu})"
-                raise ValueError(msg)
-            self._opti.set_initial(self._U, U_guess.T)
+        self._set_reference_parameters(x_ref, u_ref)
+        self._set_initial_guesses(X_guess, U_guess)
 
         try:
             sol: ca.OptiSol = self._opti.solve()
