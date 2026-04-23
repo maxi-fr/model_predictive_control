@@ -142,7 +142,7 @@ def test_simulate_invalid_long_x_ref(simple_mpc_setup: tuple[LinearMPC, LinearDy
     # Correct length but wrong inner dimension
     x_ref = np.zeros((num_steps + _N, nx + 1))
 
-    with pytest.raises(ValueError, match=rf"Long x_ref must have shape \(>=num_steps\+N, {nx}\)"):
+    with pytest.raises(ValueError, match=rf"x_ref must have shape \({_N + 1}, {nx}\) or \({nx},\)"):
         simulate(mpc, dynamics, x0, num_steps, x_ref=x_ref)
 
 
@@ -154,5 +154,5 @@ def test_simulate_invalid_long_u_ref(simple_mpc_setup: tuple[LinearMPC, LinearDy
     # Correct length but wrong inner dimension
     u_ref = np.zeros((num_steps + _N - 1, nu + 1))
 
-    with pytest.raises(ValueError, match=rf"Long u_ref must have shape \(>=num_steps\+N-1, {nu}\)"):
+    with pytest.raises(ValueError, match=rf"u_ref must have shape \({_N}, {nu}\) or \({nu},\)"):
         simulate(mpc, dynamics, x0, num_steps, u_ref=u_ref)
