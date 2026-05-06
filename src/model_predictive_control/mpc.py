@@ -2,12 +2,13 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from numpy._typing import ArrayLike
+from numpy.typing import ArrayLike
 
+from model_predictive_control.controller import Controller
 from model_predictive_control.ocp import OCP, LinearOCP
 
 
-class MPC:
+class MPC(Controller):
     """
     Wrapper for executing nonlinear Model Predictive Control (MPC).
 
@@ -15,6 +16,16 @@ class MPC:
     solving an underlying nonlinear Optimal Control Problem (OCP) in a receding horizon fashion.
     It handles OCP setup, trajectory warm-starting, and dimension validation.
     """
+
+    @property
+    def nx(self) -> int:
+        """Number of states."""
+        return self.ocp.nx
+
+    @property
+    def nu(self) -> int:
+        """Number of controls."""
+        return self.ocp.nu
 
     def __init__(
         self,
@@ -40,8 +51,6 @@ class MPC:
 
         self.N = self.ocp.N
         self.ocp.validate_dimensions()
-        self.nx = self.ocp.nx
-        self.nu = self.ocp.nu
 
         if X_guess is not None:
             self._X_guess = np.asarray(X_guess, dtype=float)
@@ -74,7 +83,11 @@ class MPC:
         return self.last_X_opt, self.last_U_opt
 
     def step(
-        self, x_current: ArrayLike, x_ref: ArrayLike | None = None, u_ref: ArrayLike | None = None
+        self,
+        x_current: ArrayLike,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
+        k: int = 0,
     ) -> tuple[npt.NDArray[np.float64], str]:
         """
         Solves the MPC problem for the current state and returns the control action and solver status.
@@ -83,6 +96,7 @@ class MPC:
             x_current: Current state as a numpy array or list.
             x_ref: Optional time-varying state reference of shape (N + 1, nx) or constant reference of shape (nx,).
             u_ref: Optional time-varying control reference of shape (N, nu) or constant reference of shape (nu,).
+            k: Current time step index (used for slicing full reference trajectories).
 
         Returns
         -------
@@ -95,8 +109,26 @@ class MPC:
             msg = f"Current state must have length {self.nx}"
             raise ValueError(msg)
 
+        x_ref_slice = None
+        if x_ref is not None:
+            x_ref_arr = np.asarray(x_ref, dtype=float)
+            x_ref_slice = (
+                x_ref_arr[k : k + self.N + 1] if x_ref_arr.ndim == 2 and x_ref_arr.shape[0] > self.N + 1 else x_ref_arr
+            )
+
+        u_ref_slice = None
+        if u_ref is not None:
+            u_ref_arr = np.asarray(u_ref, dtype=float)
+            u_ref_slice = (
+                u_ref_arr[k : k + self.N] if u_ref_arr.ndim == 2 and u_ref_arr.shape[0] > self.N else u_ref_arr
+            )
+
         X_opt, U_opt, status = self.ocp.solve(
-            x0=x_current_arr, X_guess=self._X_guess, U_guess=self._U_guess, x_ref=x_ref, u_ref=u_ref
+            x0=x_current_arr,
+            X_guess=self._X_guess,
+            U_guess=self._U_guess,
+            x_ref=x_ref_slice,
+            u_ref=u_ref_slice,
         )
 
         # Ipopt returns "Solve_Succeeded" on success, but different solvers might have different messages.
@@ -125,7 +157,61 @@ class MPC:
 
         u_opt_0: npt.NDArray[np.float64] = U_opt[0]
 
+        # Save last current state and sliced references to calculate costs later if requested
+        self._last_x_current = x_current_arr
+        self._last_x_ref_slice = x_ref_slice
+        self._last_u_ref_slice = u_ref_slice
+
         return u_opt_0, status
+
+    def get_costs(self, **_kwargs: dict[str, Any]) -> tuple[float, float]:
+        """
+        Calculate the predicted trajectory cost and current stage cost based on the last solve.
+
+        Returns
+        -------
+            Tuple of (total_trajectory_cost, stage_cost).
+        """
+        if self.last_X_opt is None or self.last_U_opt is None:
+            return np.nan, np.nan
+
+        traj_cost = self.ocp.calculate_trajectory_cost(
+            self.last_X_opt, self.last_U_opt, self._last_x_ref_slice, self._last_u_ref_slice
+        )
+
+        s_cost = 0.0
+        stage_cost_func = None
+        if hasattr(self.ocp, "objective") and self.ocp.objective is not None and self.ocp.objective.stage_costs:
+            stage_cost_func = self.ocp.objective.stage_costs[0]
+
+        if stage_cost_func is not None:
+            args = [self._last_x_current, self.last_U_opt[0]]
+            if stage_cost_func.has_reference:
+                if self._last_x_ref_slice is not None:
+                    # Get the reference for the current step k
+                    x_ref_k0 = (
+                        self._last_x_ref_slice[0]
+                        if np.asarray(self._last_x_ref_slice).ndim == 2
+                        else self._last_x_ref_slice
+                    )
+                    args.append(x_ref_k0)
+                else:
+                    args.append(np.zeros(self.nx))
+
+                if stage_cost_func.f.n_in() == 4:
+                    if self._last_u_ref_slice is not None:
+                        u_ref_k0 = (
+                            self._last_u_ref_slice[0]
+                            if np.asarray(self._last_u_ref_slice).ndim == 2
+                            else self._last_u_ref_slice
+                        )
+                        args.append(u_ref_k0)
+                    else:
+                        args.append(np.zeros(self.nu))
+
+            s_cost = float(stage_cost_func(*args))
+
+        return float(traj_cost), s_cost
 
 
 class LinearMPC(MPC):
