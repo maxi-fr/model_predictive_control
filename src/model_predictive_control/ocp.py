@@ -602,6 +602,7 @@ class OCP:
             if x_ref_arr.shape != (self.N + 1, self._nx):
                 msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
                 raise ValueError(msg)
+            assert self._opti is not None
             self._opti.set_value(self._x_ref_param, x_ref_arr.T)
 
         if self._u_ref_param is not None:
@@ -611,6 +612,7 @@ class OCP:
             if u_ref_arr.shape != (self.N, self._nu):
                 msg = f"u_ref must have shape ({self.N}, {self._nu})"
                 raise ValueError(msg)
+            assert self._opti is not None
             self._opti.set_value(self._u_ref_param, u_ref_arr.T)
 
     def _set_initial_guesses(self, X_guess: ArrayLike | None, U_guess: ArrayLike | None) -> None:
@@ -619,6 +621,7 @@ class OCP:
             if X_guess_arr.shape != (self.N + 1, self._nx):
                 msg = f"X_guess must have shape ({self.N + 1}, {self._nx})"
                 raise ValueError(msg)
+            assert self._opti is not None
             self._opti.set_initial(self._X, X_guess_arr.T)
 
         if U_guess is not None:
@@ -626,6 +629,7 @@ class OCP:
             if U_guess_arr.shape != (self.N, self._nu):
                 msg = f"U_guess must have shape ({self.N}, {self._nu})"
                 raise ValueError(msg)
+            assert self._opti is not None
             self._opti.set_initial(self._U, U_guess_arr.T)
 
     def solve(
@@ -834,7 +838,7 @@ class LinearOCP:
     def _is_time_varying(self, arr: np.ndarray, expected_dims: int) -> bool:
         return bool(arr.ndim == expected_dims + 1 and arr.shape[0] == self.N)
 
-    def validate_dimensions(self) -> None:
+    def validate_dimensions(self) -> tuple[int, int]:
         """Validate all casadi functions and returns nx and nu."""
         nx = self.nx
         nu = self.nu
@@ -862,6 +866,8 @@ class LinearOCP:
 
         for constraint, _ in self.constraints:
             constraint.validate_dimensions(nx, nu)
+
+        return nx, nu
 
     def _discretize_dynamics(self, dynamics_type: str) -> tuple[list[np.ndarray], list[np.ndarray]]:
         nx = self.nx

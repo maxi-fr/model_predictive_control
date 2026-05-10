@@ -20,6 +20,11 @@
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from simulate.estimator import IdentityEstimator
+from simulate.reference import StepReference
+from simulate.sensor import GaussianSensor
+from simulate.simulation import Simulation
 
 from model_predictive_control.constraints import ConstraintList, LinearConstraint
 from model_predictive_control.dynamics import LinearDynamics
@@ -61,23 +66,13 @@ Qf = np.diag([1000.0, 100.0])
 u_max_val = 50.0
 x_max_val = 2.0
 
-# Box constraints:
-# x_1 <= 2.0  ->  [1, 0] x + 0 u <= 2.0
-# -x_1 <= 2.0 -> [-1, 0] x + 0 u <= 2.0
-# x_2 <= 2.0  ->  [0, 1] x + 0 u <= 2.0
-# -x_2 <= 2.0 ->  [0, -1] x + 0 u <= 2.0
-# u <= 50.0   ->  [0, 0] x + 1 u <= 50.0
-# -u <= 50.0  ->  [0, 0] x - 1 u <= 50.0
-
+# Box constraints
 F = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0], [0.0, 0.0], [0.0, 0.0]])
-
 G = np.array([[0.0], [0.0], [0.0], [0.0], [1.0], [-1.0]])
-
 h = np.array([x_max_val, x_max_val, x_max_val, x_max_val, u_max_val, u_max_val])
 
 # Terminal constraints (only on state)
 F_term = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]])
-
 h_term = np.array([x_max_val, x_max_val, x_max_val, x_max_val])
 
 # Bounds for plotting
@@ -93,14 +88,19 @@ u_max = np.array([u_max_val])
 N_horizon = 20
 N_sim = 40
 dt = 0.1
+t_end = N_sim * dt
 
 cl = ConstraintList()
 cl.add(LinearConstraint(F=F, G=G, h=h), range(N_horizon))
 cl.add(LinearConstraint(F=F_term, h=h_term, nu=nu), [N_horizon])
+
+# Use LinearDynamics with dt
+dynamics = LinearDynamics(A, B, dt=dt)
+
 ocp = LinearOCP(
     N=N_horizon,
     dt=dt,
-    dynamics=LinearDynamics(A, B),
+    dynamics=dynamics,
     Q=Q,
     R=R,
     constraints=cl,
@@ -114,52 +114,40 @@ setup_args = {
     "solver_opts": {"print_iter": False, "print_header": False},
 }
 
-mpc = LinearMPC(linear_ocp=ocp, setup_args=setup_args)
+mpc = LinearMPC(linear_ocp=ocp, dt=dt, setup_args=setup_args)
 
-# Simulation loop
-x0_val = np.array([1.5, 0.0])  # Start near the bound
-X_closed_loop = np.zeros((N_sim + 1, nx))
-U_closed_loop = np.zeros((N_sim, nu))
-X_open_loop = np.zeros((N_sim, N_horizon + 1, nx))
+# Simulation setup
+x0_val = np.array([1.5, 0.0])
+dynamics.x = x0_val
 
-X_closed_loop[0, :] = x0_val
-current_x = x0_val
+ref = StepReference(dt=dt, step_value=np.zeros(nx))
+sensor = GaussianSensor(dt=dt, std_dev=0.0)
+estimator = IdentityEstimator(dt=dt)
 
-for k in range(N_sim):
-    # Step the MPC
-    u_k, _status = mpc.step(current_x)
+sim = Simulation(t_end=t_end, plant=dynamics, reference=ref, sensor=sensor, estimator=estimator, controller=mpc)
 
-    # Store predictions for plotting
-    X_opt, U_opt = mpc.get_last_open_loop_predictions()
-    assert X_opt is not None
-    assert U_opt is not None
-    X_open_loop[k, :, :] = X_opt
-
-    # Apply control to system
-    x_next = A @ current_x + B @ u_k
-
-    # Store results
-    U_closed_loop[k, :] = u_k
-    X_closed_loop[k + 1, :] = x_next
-
-    # Update current state
-    current_x = x_next
-
-    # Shift trajectories for next warm start
-    X_guess = np.vstack((X_opt[1:, :], X_opt[-1:, :]))
-    U_guess = np.vstack((U_opt[1:, :], U_opt[-1:, :]))
+sim.run()
 
 # %% [markdown]
 # ## 4. Plot Results
 
 # %%
-time = np.arange(N_sim + 1) * dt
+# Extract results from logger
+results_df = pd.DataFrame(sim.logger.universal_logs)
+time_vec = results_df["t"].to_numpy()
+
+# Extract X_closed_loop and X_open_loop from the logs
+X_closed_loop = np.array([log["y"] for log in sim.logger.universal_logs])
+U_closed_loop = np.array([log["u"] for log in sim.logger.universal_logs])
+
+# Open loop predictions from controller logs
+X_open_loop = np.array([log["X_opt"] for log in sim.logger.component_logs["controller"]])
 
 fig, axs = plt.subplots(2, 1, figsize=(10, 8))
 
 # Plot states with open loop predictions
 plot_mpc_trajectories(
-    time,
+    time_vec,
     X_closed_loop,
     X_open_loop,
     labels=["State 1", "State 2"],
@@ -172,7 +160,7 @@ plot_mpc_trajectories(
 
 # Plot controls
 plot_controls(
-    time,
+    time_vec,
     U_closed_loop,
     labels=["Control"],
     fig=fig,

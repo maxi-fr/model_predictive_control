@@ -20,7 +20,7 @@ def setup_simple_ocp() -> OCP:
     x = ca.MX.sym("x", nx)
     u = ca.MX.sym("u", nu)
     dyn = ca.vertcat(x[1], u[0])
-    dynamics = Dynamics(ca.Function("dyn", [x, u], [dyn]))
+    dynamics = Dynamics(ca.Function("dyn", [x, u], [dyn]), dt=dt)
 
     obj_func = x[0] ** 2 + x[1] ** 2 + u[0] ** 2
     term_obj_func = 10 * (x[0] ** 2 + x[1] ** 2)
@@ -72,7 +72,7 @@ def test_mpc_step_and_shifting() -> None:
     mpc = MPC(ocp=ocp, setup_args=setup_args)
 
     x0 = np.array([1.0, 0.0])
-    u0, _status0 = mpc.step(x0)
+    u0, _log0 = mpc.step(t=0.0, ref=None, x_hat=x0)
 
     assert u0.shape == (1,)
     # After step, guesses should be shifted
@@ -82,7 +82,7 @@ def test_mpc_step_and_shifting() -> None:
 
     # Second step should run fine with warm-started guesses
     x1 = np.array([0.9, -0.1])
-    u1, _status1 = mpc.step(x1)
+    u1, _log1 = mpc.step(t=mpc.dt, ref=None, x_hat=x1)
     assert u1.shape == (1,)
 
 
@@ -98,17 +98,21 @@ def test_mpc_solve_failure() -> None:
     mpc = MPC(ocp=ocp, setup_args=setup_args)
 
     x0 = np.array([100.0, 100.0])
-    with pytest.raises(RuntimeError, match="solve failed with status"):
-        mpc.step(x0)
+    with pytest.raises(RuntimeError, match=r"solve failed at t=0.0 with status"):
+        mpc.step(t=0.0, ref=None, x_hat=x0)
 
 
 def setup_simple_linear_ocp() -> LinearOCP:
+    nx = 2
+    nu = 1
+    N = 5
+    dt = 0.1
     A = np.array([[1.0, 0.1], [0.0, 1.0]])
     B = np.array([[0.0], [0.1]])
-    Q = np.eye(2) * 10
-    R = np.eye(1)
+    Q = np.eye(nx) * 10
+    R = np.eye(nu)
 
-    return LinearOCP(N=5, dt=0.1, dynamics=LinearDynamics(A, B), Q=Q, R=R)
+    return LinearOCP(N=N, dt=dt, dynamics=LinearDynamics(A, B, dt=dt), Q=Q, R=R)
 
 
 def test_linear_mpc_initialization() -> None:
@@ -137,14 +141,14 @@ def test_linear_mpc_step_and_shifting() -> None:
     mpc = LinearMPC(linear_ocp=ocp, setup_args=setup_args)
 
     x0 = np.array([1.0, 0.0])
-    u0, _status0 = mpc.step(x0)
+    u0, _log0 = mpc.step(t=0.0, ref=None, x_hat=x0)
 
     assert u0.shape == (1,)
     np.testing.assert_array_equal(mpc._X_guess[-1], mpc._X_guess[-2])
     np.testing.assert_array_equal(mpc._U_guess[-1], mpc._U_guess[-2])
 
     x1 = np.array([[1.0, 0.1], [0.0, 1.0]]) @ x0 + np.array([[0.0], [0.1]]) @ u0
-    u1, _status1 = mpc.step(x1)
+    u1, _log1 = mpc.step(t=mpc.dt, ref=None, x_hat=x1)
     assert u1.shape == (1,)
 
 
@@ -155,7 +159,7 @@ def test_linear_mpc_tracking() -> None:
     Q = np.eye(2) * 10
     R = np.eye(1)
 
-    ocp = LinearOCP(N=5, dt=0.1, dynamics=LinearDynamics(A, B), Q=Q, R=R)
+    ocp = LinearOCP(N=5, dt=0.1, dynamics=LinearDynamics(A, B, dt=0.1), Q=Q, R=R)
     setup_args = {
         "method": "multiple_shooting",
         "dynamics_type": "discrete",
@@ -168,7 +172,7 @@ def test_linear_mpc_tracking() -> None:
     u_ref_1d = np.array([0.0])
 
     # Pass 1D references, the wrapper should pass them down, and LinearOCP should tile them
-    u0, _status0 = mpc.step(x0, x_ref=x_ref_1d, u_ref=u_ref_1d)
+    u0, _log0 = mpc.step(t=0.0, ref=(x_ref_1d, u_ref_1d), x_hat=x0)
     assert u0.shape == (1,)
 
 

@@ -151,8 +151,8 @@ def test_nonlinear_mpc_step(benchmark) -> None:  # type: ignore[no-untyped-def] 
         iterations_list = []
 
         x = x_current.copy()
-        for _ in range(num_steps):
-            u, _status = mpc.step(x)
+        for k in range(num_steps):
+            u, _status = mpc.step(t=k * dt, ref=None, x_hat=x)
 
             try:
                 opti = getattr(mpc.ocp, "_opti", None)

@@ -148,7 +148,7 @@ ocp = OCP(
     N=N,
     dt=dt,
     objective=objective,
-    dynamics=Dynamics(dynamics),
+    dynamics=Dynamics(dynamics, dt=dt),
     constraints=cl,
 )
 

@@ -48,7 +48,7 @@ B = Bc * dt
 nx = A.shape[1]
 nu = B.shape[1]
 
-dynamics = LinearDynamics(A=A, B=B)
+dynamics = LinearDynamics(A=A, B=B, dt=dt)
 
 # %% [markdown]
 # ## 2. Noise Characteristics
@@ -61,8 +61,8 @@ sigma_w_pos = 0.05
 sigma_w_vel = 0.02
 Sigma_w = np.diag([sigma_w_pos**2, sigma_w_vel**2])
 
-# Set a random seed for reproducible comparisons
-np.random.seed(42)
+# Use modern numpy random generator
+rng = np.random.default_rng(42)
 
 # %% [markdown]
 # ## 3. Formulate Nominal MPC
@@ -95,7 +95,7 @@ nominal_state_constraints.add(LinearConstraint(h=np.array([-u_min]), G=np.array(
 # We need to use LinearOCP for the formulation
 nominal_ocp = LinearOCP(dynamics=dynamics, Q=Q, R=R, N=N, dt=dt, constraints=nominal_state_constraints)
 
-nominal_mpc = LinearMPC(linear_ocp=nominal_ocp, setup_args={"solver": "osqp"})
+nominal_mpc = LinearMPC(linear_ocp=nominal_ocp, dt=dt, setup_args={"solver": "osqp"})
 
 # %% [markdown]
 # ## 4. Formulate Chance Constrained MPC
@@ -135,7 +135,7 @@ cc_state_constraints.add(LinearConstraint(h=np.array([-u_min]), G=np.array([[-1.
 
 cc_ocp = LinearOCP(dynamics=dynamics, Q=Q, R=R, N=N, dt=dt, constraints=cc_state_constraints)
 
-cc_mpc = LinearMPC(linear_ocp=cc_ocp, setup_args={"solver": "osqp"})
+cc_mpc = LinearMPC(linear_ocp=cc_ocp, dt=dt, setup_args={"solver": "osqp"})
 
 # %% [markdown]
 # ## 5. Closed-Loop Simulation
@@ -146,24 +146,26 @@ n_steps = 50
 x0 = np.array([0.8, 0.0])  # Start near the boundary
 
 # Generate identical noise sequence for fair comparison
-noise_seq = np.random.multivariate_normal(np.zeros(2), Sigma_w, size=n_steps)
+noise_seq = rng.multivariate_normal(np.zeros(2), Sigma_w, size=n_steps)
 
 
-def run_simulation(mpc_controller):
+def run_simulation(mpc_controller: LinearMPC) -> tuple[np.ndarray, np.ndarray]:
+    """Run closed-loop simulation."""
     x = x0.copy()
     states = [x]
     controls = []
 
-    for _i in range(n_steps):
+    for k in range(n_steps):
         # Solve MPC using wrapper step
         try:
-            u_k, _status = mpc_controller.step(x)
+            u_k, _status = mpc_controller.step(t=k * dt, ref=None, x_hat=x)
         except RuntimeError as e:
-            print(f"MPC solve failed at step {_i}: {e}")
+            print(f"MPC solve failed at step {k}: {e}")
             break
 
         # Apply control and noise
-        x_next = A @ x + B.flatten() * u_k + noise_seq[_i]
+        u_val = u_k.item() if u_k.size == 1 else u_k
+        x_next = A @ x + B.flatten() * u_val + noise_seq[k]
 
         states.append(x_next)
         controls.append(u_k)
@@ -183,11 +185,11 @@ states_cc, controls_cc = run_simulation(cc_mpc)
 # We plot the position over time to observe if the bounds are violated.
 
 # %%
-time = np.arange(len(states_nom)) * dt
+time_nom = np.arange(len(states_nom)) * dt
 
 plt.figure(figsize=(10, 6))
 
-plt.plot(time, states_nom[:, 0], "r-", label="Nominal MPC")
+plt.plot(time_nom, states_nom[:, 0], "r-", label="Nominal MPC")
 if len(states_cc) > 0:
     plt.plot(np.arange(len(states_cc)) * dt, states_cc[:, 0], "b-", label="Chance Constrained MPC")
 
@@ -199,5 +201,5 @@ plt.xlabel("Time [s]")
 plt.ylabel("Position $p$")
 plt.legend()
 plt.title("Position vs Time")
-plt.grid(True)
+plt.grid(visible=True)
 plt.show()

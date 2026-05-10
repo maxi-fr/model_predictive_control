@@ -15,15 +15,21 @@
 # %% [markdown]
 # # Closed-Loop Model Predictive Control for a 3D Quadrotor Tracking an S-Shaped Trajectory
 #
-# This notebook demonstrates how to formulate and solve a closed-loop model predictive control (MPC) problem for a full 3D quadrotor tracking a time-varying reference trajectory using the `MPC` and `OCP` classes from the `model_predictive_control` package.
+# This notebook demonstrates how to formulate and solve a closed-loop model predictive control (MPC) problem for a full 3D quadrotor tracking a time-varying reference trajectory using the `MPC` and `OCP` classes from the `model_predictive_control` package, integrated with the `simulate` framework.
 
 # %%
-from collections.abc import Callable
+from typing import Any
 
 import casadi as ca
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.typing import ArrayLike
+import pandas as pd
+from pydantic import BaseModel, ConfigDict
+from simulate.estimator import IdentityEstimator
+from simulate.integrator import rk4
+from simulate.reference import Reference
+from simulate.sensor import GaussianSensor
+from simulate.simulation import Simulation
 
 from model_predictive_control.constraints import ConstraintList, ControlBoundConstraint, StateBoundConstraint
 from model_predictive_control.dynamics import Dynamics
@@ -104,14 +110,14 @@ omega_dot = inv_J @ (tau - ca.cross(omega, J @ omega))
 
 # Full state derivative
 x_dot = ca.vertcat(v_vel, v_dot, eta_dot, omega_dot)
-dynamics = ca.Function("dynamics", [x, u], [x_dot])
+dynamics_func = ca.Function("dynamics", [x, u], [x_dot])
 
 # %% [markdown]
 # ## 2. Objective and Constraints
 
 # %%
 N = 40  # OCP Horizon length
-
+dt = 0.1
 
 # State weights
 Q_diag = [
@@ -134,7 +140,6 @@ Qf = Q * 5.0
 
 objective = LQRObjective(Q, R, Qf, N)
 
-
 u_min_val = 0.0
 u_max_val = 3.0
 u_min = np.array([u_min_val] * nu)
@@ -154,8 +159,7 @@ cl.add(control_bounds, slice(0, N))
 # ## 3. Reference Trajectory and MPC Setup
 
 # %%
-N_sim = N * 3  # Closed loop simulation steps
-dt = 0.1
+N_sim = N * 3
 time_sim = np.arange(N_sim + 1) * dt
 T_ref_total = (N_sim + N) * dt
 time_ref = np.arange(0, N_sim + N + 1) * dt
@@ -167,12 +171,10 @@ hover_thrust = m * g / 4.0
 
 for k in range(N_sim + N + 1):
     t = time_ref[k]
-
     # S-shape trajectory
     X_ref_full[k, 0] = 1.0 - 1.0 * t
     X_ref_full[k, 1] = 2.0 * np.sin(2 * np.pi * t / (N * 3 * dt))
     X_ref_full[k, 2] = 1.0 + 0.5 * t
-
     X_ref_full[k, 3] = 1.0
     X_ref_full[k, 4] = 2.0 * (2 * np.pi / (N * 3 * dt)) * np.cos(2 * np.pi * t / (N * 3 * dt))
     X_ref_full[k, 5] = 0.0
@@ -180,12 +182,57 @@ for k in range(N_sim + N + 1):
 for k in range(N_sim + N):
     U_ref_full[k, :] = hover_thrust
 
-# Initialize OCP and MPC
+
+class TrajectoryReferenceLog(BaseModel):
+    """Log for TrajectoryReference."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    k: int
+
+
+# Custom reference generator for time-varying trajectory
+
+
+class TrajectoryReference(Reference[TrajectoryReferenceLog]):
+    """Generates an S-shaped trajectory reference."""
+
+    def __init__(self, dt: float, X_ref: np.ndarray, U_ref: np.ndarray, N_horizon: int) -> None:
+        super().__init__(dt)
+        self.X_ref = X_ref
+        self.U_ref = U_ref
+        self.N_horizon = N_horizon
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "TrajectoryReference":
+        """Not implemented."""
+        raise NotImplementedError
+
+    def step(self, t: float) -> tuple[np.ndarray, TrajectoryReferenceLog]:
+        """Execute step."""
+        return self._execute_zoh(t, self.update)
+
+    def update(self, t: float) -> tuple[Any, TrajectoryReferenceLog]:
+        """Update reference."""
+        k = round(t / self.dt)
+        # Log 1D version of the current state reference for UniversalLog validation
+        self.X_ref[k]
+
+        # Internal reference passed to controller is the full horizon
+        xk_ref_horizon = self.X_ref[k : k + self.N_horizon + 1]
+        uk_ref_horizon = self.U_ref[k : k + self.N_horizon]
+
+        return (xk_ref_horizon, uk_ref_horizon), TrajectoryReferenceLog(k=k)
+
+
+# Initialize Dynamics (Plant)
+dynamics = Dynamics(dynamics_func, dt=dt, integrator=rk4)
+
+# Initialize OCP and MPC (Controller)
 ocp = OCP(
     N=N,
     dt=dt,
     objective=objective,
-    dynamics=Dynamics(dynamics),
+    dynamics=dynamics,
     constraints=cl,
 )
 
@@ -196,64 +243,72 @@ setup_args = {
     "solver_opts": {"print_level": 0},
 }
 
-mpc = MPC(ocp, setup_args=setup_args, X_guess=X_ref_full[0 : N + 1, :], U_guess=U_ref_full[0:N, :])
+mpc = MPC(ocp, dt=dt, setup_args=setup_args, X_guess=X_ref_full[0 : N + 1, :], U_guess=U_ref_full[0:N, :])
 
 # %% [markdown]
 # ## 4. Closed-Loop Simulation
 
 # %%
-X_closed_loop = np.zeros((N_sim + 1, nx))
-U_closed_loop = np.zeros((N_sim, nu))
-X_open_loop = np.zeros((N_sim, N + 1, nx))
-
-x_current = X_ref_full[0, :].copy()
-X_closed_loop[0, :] = x_current
+x0 = X_ref_full[0, :].copy()
+dynamics.x = x0
 
 
-# Use a discrete-time integration scheme (RK4) for the "true" plant
-def rk4_step(
-    dyn_func: Callable[[ArrayLike, ArrayLike], ArrayLike], x: ArrayLike, u: ArrayLike, dt: float
-) -> np.ndarray:
-    """Calculate the next state using an RK4 scheme."""
-    k1 = np.array(dyn_func(x, u)).flatten()
-    k2 = np.array(dyn_func(x + dt / 2 * k1, u)).flatten()
-    k3 = np.array(dyn_func(x + dt / 2 * k2, u)).flatten()
-    k4 = np.array(dyn_func(x + dt * k3, u)).flatten()
-    return x + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+def patched_step(self: TrajectoryReference, t: float) -> tuple[np.ndarray, TrajectoryReferenceLog]:
+    """Return only 1D reference for UniversalLog validation."""
+    k = round(t / self.dt)
+    # We call update indirectly via ZOH, but we ignore its return for the 1D signal
+    _, log = self._execute_zoh(t, self.update)
+    return self.X_ref[k], log
 
+
+TrajectoryReference.step = patched_step
+
+
+def patched_mpc_step(self: MPC, t: float, ref: np.ndarray, x_hat: np.ndarray) -> tuple[np.ndarray, Any]:  # noqa: ARG001
+    """Regenerate horizon reference from 1D signal."""
+    k = round(t / self.dt)
+    xk_ref_horizon = ref_gen.X_ref[k : k + self.N + 1]
+    uk_ref_horizon = ref_gen.U_ref[k : k + self.N]
+    return original_mpc_step(t, (xk_ref_horizon, uk_ref_horizon), x_hat)
+
+
+original_mpc_step = mpc.step
+mpc.step = patched_mpc_step.__get__(mpc, MPC)
+
+ref_gen = TrajectoryReference(dt, X_ref_full, U_ref_full, N)
+sensor = GaussianSensor(dt, std_dev=0.0)
+estimator = IdentityEstimator(dt)
+
+sim = Simulation(
+    t_end=N_sim * dt, plant=dynamics, reference=ref_gen, sensor=sensor, estimator=estimator, controller=mpc
+)
 
 print("Running MPC closed-loop simulation...")
-for k in range(N_sim):
-    # Slice the reference for the current horizon
-    x_ref_horizon = X_ref_full[k : k + N + 1, :]
-    u_ref_horizon = U_ref_full[k : k + N, :]
-
-    # Step MPC
-    u_k, _status = mpc.step(x_current=x_current, x_ref=x_ref_horizon, u_ref=u_ref_horizon)
-
-    # Store open loop predictions
-    X_open_loop[k, :, :] = mpc.last_X_opt
-
-    # Step simulation
-    x_next = rk4_step(dynamics, x_current, u_k, dt)
-
-    X_closed_loop[k + 1, :] = x_next
-    U_closed_loop[k, :] = u_k
-    x_current = x_next
-
+sim.run()
 print("Simulation finished.")
 
 # %% [markdown]
 # ## 5. Visualize Results
 
 # %%
+# Extract results
+results_df = pd.DataFrame(sim.logger.universal_logs)
+time_vec = results_df["t"].to_numpy()
+X_closed_loop = np.array([log["y"] for log in sim.logger.universal_logs])
+U_closed_loop = np.array([log["u"] for log in sim.logger.universal_logs])
+X_open_loop = np.array([log["X_opt"] for log in sim.logger.component_logs["controller"]])
+
 fig, axs = plt.subplots(3, 1, figsize=(10, 15))
 
 # Position X, Y, Z vs Reference
 for idx, label in enumerate(["X [m]", "Y [m]", "Z [m]"]):
-    axs[0].plot(time_sim, X_closed_loop[:, idx], label=f"Closed-Loop {label}", linewidth=2)
+    axs[0].plot(time_vec, X_closed_loop[:, idx], label=f"Closed-Loop {label}", linewidth=2)
     axs[0].plot(
-        time_ref[: N_sim + 1], X_ref_full[: N_sim + 1, idx], label=f"Reference {label}", linestyle="--", alpha=0.7
+        time_ref[: len(time_vec)],
+        X_ref_full[: len(time_vec), idx],
+        label=f"Reference {label}",
+        linestyle="--",
+        alpha=0.7,
     )
 axs[0].set_title("Position Tracking")
 axs[0].set_ylabel("Position")
@@ -262,7 +317,7 @@ axs[0].grid()
 
 # Euler Angles with open-loop predictions
 plot_mpc_trajectories(
-    time_sim,
+    time_vec,
     X_closed_loop,
     X_open_loop,
     indices=[6, 7, 8],
@@ -277,7 +332,7 @@ plot_mpc_trajectories(
 
 # Controls
 plot_controls(
-    time_sim,
+    time_vec,
     U_closed_loop,
     labels=["$T_1$", "$T_2$", "$T_3$", "$T_4$"],
     fig=fig,
@@ -296,9 +351,9 @@ ax_3d = fig_3d.add_subplot(111, projection="3d")
 ax_3d.set_aspect("equal")
 
 ax_3d.plot(
-    X_ref_full[: N_sim + 1, 0],
-    X_ref_full[: N_sim + 1, 1],
-    X_ref_full[: N_sim + 1, 2],
+    X_ref_full[: len(time_vec), 0],
+    X_ref_full[: len(time_vec), 1],
+    X_ref_full[: len(time_vec), 2],
     "--",
     color="gray",
     label="Reference Path",
