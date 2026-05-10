@@ -56,6 +56,16 @@ class OCP:
 
         self._nx, self._nu = self.validate_dimensions()
 
+    @property
+    def nx(self) -> int:
+        """Return the number of states."""
+        return self._nx
+
+    @property
+    def nu(self) -> int:
+        """Return the number of controls."""
+        return self._nu
+
     def validate_dimensions(self) -> tuple[int, int]:
         """Validate all casadi functions and returns nx and nu."""
         if self.dynamics.f.n_in() < 2:
@@ -401,7 +411,31 @@ class OCP:
             constraints=lin_constraints,
         )
 
-    def setup(  # noqa: D102, PLR0915, PLR0912, PLR0913, C901 TODO: fix issues
+    def _get_stage_cost(self, k: int, x_k: ca.MX, u_k: ca.MX) -> ca.MX:
+        stage_cost = self.objective.stage_costs[k]
+        if stage_cost.has_reference:
+            assert self._x_ref_param is not None
+            assert self._u_ref_param is not None
+            return stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
+        return stage_cost.f(x_k, u_k)
+
+    def _apply_stage_constraints(self, k: int, x_k: ca.MX, u_k: ca.MX) -> None:
+        for constraint, time_indices in self.constraints:
+            resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
+            if k in resolved_indices:
+                if isinstance(constraint, StateConstraint):
+                    val = constraint.f(x_k)
+                elif isinstance(constraint, ControlConstraint):
+                    val = constraint.f(u_k)
+                elif isinstance(constraint, Constraint):
+                    val = constraint.f(x_k, u_k)
+                if self._opti is not None:
+                    if constraint.is_equality:
+                        self._opti.subject_to(val == 0)
+                    else:
+                        self._opti.subject_to(val <= 0)
+
+    def setup(  # noqa: D102, PLR0915, PLR0912, PLR0913, C901
         self,
         method: str = "multiple_shooting",
         dynamics_type: str = "continuous",
@@ -454,30 +488,8 @@ class OCP:
             for k in range(self.N):
                 u_k = self._U[:, k]
 
-                # Cost
-                stage_cost = self.objective.stage_costs[k]
-                if stage_cost.has_reference:
-                    assert self._x_ref_param is not None
-                    assert self._u_ref_param is not None
-                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
-                else:
-                    cost += stage_cost.f(x_k, u_k)
-
-                # Constraints
-                for constraint, time_indices in self.constraints:
-                    resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
-                    if k in resolved_indices:
-                        if isinstance(constraint, StateConstraint):
-                            val = constraint.f(x_k)
-                        elif isinstance(constraint, ControlConstraint):
-                            val = constraint.f(u_k)
-                        elif isinstance(constraint, Constraint):
-                            val = constraint.f(x_k, u_k)
-
-                        if constraint.is_equality:
-                            self._opti.subject_to(val == 0)
-                        else:
-                            self._opti.subject_to(val <= 0)
+                cost += self._get_stage_cost(k, x_k, u_k)
+                self._apply_stage_constraints(k, x_k, u_k)
 
                 # Dynamics
                 x_k = dyn_func(x_k, u_k)
@@ -494,30 +506,8 @@ class OCP:
                 x_k = self._X[:, k]
                 u_k = self._U[:, k]
 
-                # Cost
-                stage_cost = self.objective.stage_costs[k]
-                if stage_cost.has_reference:
-                    assert self._x_ref_param is not None
-                    assert self._u_ref_param is not None
-                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
-                else:
-                    cost += stage_cost.f(x_k, u_k)
-
-                # Constraints
-                for constraint, time_indices in self.constraints:
-                    resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
-                    if k in resolved_indices:
-                        if isinstance(constraint, StateConstraint):
-                            val = constraint.f(x_k)
-                        elif isinstance(constraint, ControlConstraint):
-                            val = constraint.f(u_k)
-                        elif isinstance(constraint, Constraint):
-                            val = constraint.f(x_k, u_k)
-
-                        if constraint.is_equality:
-                            self._opti.subject_to(val == 0)
-                        else:
-                            self._opti.subject_to(val <= 0)
+                cost += self._get_stage_cost(k, x_k, u_k)
+                self._apply_stage_constraints(k, x_k, u_k)
 
                 # Dynamics gap closing
                 x_next = dyn_func(x_k, u_k)
@@ -540,30 +530,8 @@ class OCP:
                 x_k_next = self._X[:, k + 1]
                 u_k = self._U[:, k]
 
-                # Cost
-                stage_cost = self.objective.stage_costs[k]
-                if stage_cost.has_reference:
-                    assert self._x_ref_param is not None
-                    assert self._u_ref_param is not None
-                    cost += stage_cost.f(x_k, u_k, self._x_ref_param[:, k], self._u_ref_param[:, k])
-                else:
-                    cost += stage_cost.f(x_k, u_k)
-
-                # Constraints
-                for constraint, time_indices in self.constraints:
-                    resolved_indices = self.constraints.resolve_indices(time_indices, self.N)
-                    if k in resolved_indices:
-                        if isinstance(constraint, StateConstraint):
-                            val = constraint.f(x_k)
-                        elif isinstance(constraint, ControlConstraint):
-                            val = constraint.f(u_k)
-                        elif isinstance(constraint, Constraint):
-                            val = constraint.f(x_k, u_k)
-
-                        if constraint.is_equality:
-                            self._opti.subject_to(val == 0)
-                        else:
-                            self._opti.subject_to(val <= 0)
+                cost += self._get_stage_cost(k, x_k, u_k)
+                self._apply_stage_constraints(k, x_k, u_k)
 
                 # Hermite-Simpson collocation point
                 f_k = self.dynamics(x_k, u_k)
@@ -596,19 +564,19 @@ class OCP:
                 if isinstance(constraint, StateConstraint):
                     val = constraint.f(x_N)
                 elif isinstance(constraint, Constraint):
-                    # For terminal constraints that incorrectly use f(x, u), we can't properly evaluate u_N
-                    # Since this is poor practice, we pass a dummy, but ideally users use StateConstraint
-                    dummy_u = ca.MX.zeros(nu)
-                    val = constraint.f(x_N, dummy_u)
+                    msg = "Terminal constraints cannot depend on control u. Use StateConstraint instead."
+                    raise ValueError(msg)
                 else:
                     continue  # ControlConstraint doesn't make sense at terminal step
 
-                if constraint.is_equality:
-                    self._opti.subject_to(val == 0)
-                else:
-                    self._opti.subject_to(val <= 0)
+                if self._opti is not None:
+                    if constraint.is_equality:
+                        self._opti.subject_to(val == 0)
+                    else:
+                        self._opti.subject_to(val <= 0)
 
-        self._opti.minimize(cost)
+        if self._opti is not None:
+            self._opti.minimize(cost)
 
         # Set up solver options
         p_opts = {"expand": True}
@@ -626,7 +594,41 @@ class OCP:
 
         self._opti.solver(solver, p_opts, s_opts)
 
-    def solve(  # noqa: PLR0912, C901, TODO: refactor to fix issues
+    def _set_reference_parameters(self, x_ref: ArrayLike | None, u_ref: ArrayLike | None) -> None:
+        if self._x_ref_param is not None:
+            if x_ref is None:
+                x_ref = np.zeros((self.N + 1, self._nx))
+            x_ref_arr = np.asarray(x_ref, dtype=float)
+            if x_ref_arr.shape != (self.N + 1, self._nx):
+                msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
+                raise ValueError(msg)
+            self._opti.set_value(self._x_ref_param, x_ref_arr.T)
+
+        if self._u_ref_param is not None:
+            if u_ref is None:
+                u_ref = np.zeros((self.N, self._nu))
+            u_ref_arr = np.asarray(u_ref, dtype=float)
+            if u_ref_arr.shape != (self.N, self._nu):
+                msg = f"u_ref must have shape ({self.N}, {self._nu})"
+                raise ValueError(msg)
+            self._opti.set_value(self._u_ref_param, u_ref_arr.T)
+
+    def _set_initial_guesses(self, X_guess: ArrayLike | None, U_guess: ArrayLike | None) -> None:
+        if X_guess is not None:
+            X_guess_arr = np.asarray(X_guess)
+            if X_guess_arr.shape != (self.N + 1, self._nx):
+                msg = f"X_guess must have shape ({self.N + 1}, {self._nx})"
+                raise ValueError(msg)
+            self._opti.set_initial(self._X, X_guess_arr.T)
+
+        if U_guess is not None:
+            U_guess_arr = np.asarray(U_guess)
+            if U_guess_arr.shape != (self.N, self._nu):
+                msg = f"U_guess must have shape ({self.N}, {self._nu})"
+                raise ValueError(msg)
+            self._opti.set_initial(self._U, U_guess_arr.T)
+
+    def solve(
         self,
         x0: ArrayLike,
         X_guess: ArrayLike | None = None,
@@ -657,44 +659,15 @@ class OCP:
 
         self._opti.set_value(self._x0_param, x0)
 
-        if self._x_ref_param is not None:
-            if x_ref is None:
-                x_ref = np.zeros((self.N + 1, self._nx))
-            x_ref_arr = np.asarray(x_ref, dtype=float)
-            if x_ref_arr.shape != (self.N + 1, self._nx):
-                msg = f"x_ref must have shape ({self.N + 1}, {self._nx})"
-                raise ValueError(msg)
-            self._opti.set_value(self._x_ref_param, x_ref_arr.T)
-
-        if self._u_ref_param is not None:
-            if u_ref is None:
-                u_ref = np.zeros((self.N, self._nu))
-            u_ref_arr = np.asarray(u_ref, dtype=float)
-            if u_ref_arr.shape != (self.N, self._nu):
-                msg = f"u_ref must have shape ({self.N}, {self._nu})"
-                raise ValueError(msg)
-            self._opti.set_value(self._u_ref_param, u_ref_arr.T)
-
-        if X_guess is not None:
-            X_guess = np.asarray(X_guess)
-            if X_guess.shape != (self.N + 1, self._nx):
-                msg = f"X_guess must have shape ({self.N + 1}, {self._nx})"
-                raise ValueError(msg)
-            self._opti.set_initial(self._X, X_guess.T)
-
-        if U_guess is not None:
-            U_guess = np.asarray(U_guess)
-            if U_guess.shape != (self.N, self._nu):
-                msg = f"U_guess must have shape ({self.N}, {self._nu})"
-                raise ValueError(msg)
-            self._opti.set_initial(self._U, U_guess.T)
+        self._set_reference_parameters(x_ref, u_ref)
+        self._set_initial_guesses(X_guess, U_guess)
 
         try:
             sol: ca.OptiSol = self._opti.solve()
             X_opt = sol.value(self._X)
             U_opt = sol.value(self._U)
             status: str = sol.stats()["return_status"]
-        except Exception as e:  # noqa: BLE001
+        except RuntimeError as e:
             # If solve fails, return the values at the last iteration
             X_opt = self._opti.debug.value(self._X)
             U_opt = self._opti.debug.value(self._U)
@@ -835,6 +808,18 @@ class LinearOCP:
         self.Qf = (self.Q if self.Q.ndim == 2 else self.Q[-1]).copy() if Qf is None else np.asarray(Qf, dtype=float)
         self.qf = (self.q if self.q.ndim == 1 else self.q[-1]).copy() if qf is None else np.asarray(qf, dtype=float)
 
+        # Broadcast arrays to ensure they have the time dimension (N, ...)
+        if self.Q.ndim == 2:
+            self.Q = np.broadcast_to(self.Q, (self.N, *self.Q.shape))
+        if self.R.ndim == 2:
+            self.R = np.broadcast_to(self.R, (self.N, *self.R.shape))
+        if self.q.ndim == 1:
+            self.q = np.broadcast_to(self.q, (self.N, *self.q.shape))
+        if self.r.ndim == 1:
+            self.r = np.broadcast_to(self.r, (self.N, *self.r.shape))
+        if self.N_cross.ndim == 2:
+            self.N_cross = np.broadcast_to(self.N_cross, (self.N, *self.N_cross.shape))
+
         self.constraints = constraints if constraints is not None else ConstraintList()
 
         self.validate_dimensions()
@@ -878,27 +863,10 @@ class LinearOCP:
         for constraint, _ in self.constraints:
             constraint.validate_dimensions(nx, nu)
 
-    def setup(  # noqa: PLR0915, PLR0912, C901   # TODO: refactor
-        self,
-        method: str = "multiple_shooting",
-        dynamics_type: str = "discrete",
-        solver: str = "qrqp",
-        plugin_opts: dict[str, Any] | None = None,
-        solver_opts: dict[str, Any] | None = None,
-    ) -> None:
-        """
-        Set up the QP solver for the given method and solver backend.
-
-        method: "multiple_shooting" (sparse) or "single_shooting" (condensed)
-        dynamics_type: "discrete" or "continuous" (will be exactly discretized using ZOH)
-        solver: The backend solver for ca.qpsol (e.g. 'qrqp', 'osqp').
-        """
-        self._method = method
+    def _discretize_dynamics(self, dynamics_type: str) -> tuple[list[np.ndarray], list[np.ndarray]]:
         nx = self.nx
         nu = self.nu
         N = self.N
-
-        # Compute A_d and B_d for all k
         A_d_list = []
         B_d_list = []
         for k in range(N):
@@ -918,8 +886,259 @@ class LinearOCP:
             else:
                 msg = f"Unknown dynamics_type: {dynamics_type}"
                 raise ValueError(msg)
+        return A_d_list, B_d_list
 
-        # "expand" is for nlpsol, conic doesn't need it.
+    def _setup_multiple_shooting(  # noqa: C901, PLR0912, PLR0915
+        self,
+        A_d_list: list[np.ndarray],
+        B_d_list: list[np.ndarray],
+        p_opts: dict[str, Any],
+        s_opts: dict[str, Any],
+        solver: str,
+    ) -> None:
+        nx = self.nx
+        nu = self.nu
+        N = self.N
+        n_vars = (N + 1) * nx + N * nu
+
+        H_sp = np.zeros((n_vars, n_vars))
+        g_vec = np.zeros(n_vars)
+
+        for k in range(N):
+            Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
+            Rk = self.R[k] if self.R.ndim == 3 else self.R
+            N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+            qk = self.q[k] if self.q.ndim == 2 else self.q
+            rk = self.r[k] if self.r.ndim == 2 else self.r
+
+            idx_x = k * (nx + nu)
+            idx_u = idx_x + nx
+            H_sp[idx_x : idx_x + nx, idx_x : idx_x + nx] = Qk
+            H_sp[idx_u : idx_u + nu, idx_u : idx_u + nu] = Rk
+            if np.any(N_cross_k):
+                H_sp[idx_x : idx_x + nx, idx_u : idx_u + nu] = N_cross_k
+                H_sp[idx_u : idx_u + nu, idx_x : idx_x + nx] = N_cross_k.T
+
+            g_vec[idx_x : idx_x + nx] = qk
+            g_vec[idx_u : idx_u + nu] = rk
+
+        idx_xN = N * (nx + nu)
+        H_sp[idx_xN : idx_xN + nx, idx_xN : idx_xN + nx] = self.Qf
+        g_vec[idx_xN : idx_xN + nx] = self.qf
+
+        n_eq = (N + 1) * nx
+        A_eq = np.zeros((n_eq, n_vars))
+
+        A_eq[:nx, :nx] = np.eye(nx)
+
+        for k in range(N):
+            row_idx = (k + 1) * nx
+            idx_x = k * (nx + nu)
+            idx_u = idx_x + nx
+            idx_x_next = (k + 1) * (nx + nu)
+
+            A_eq[row_idx : row_idx + nx, idx_x : idx_x + nx] = -A_d_list[k]
+            A_eq[row_idx : row_idx + nx, idx_u : idx_u + nu] = -B_d_list[k]
+            A_eq[row_idx : row_idx + nx, idx_x_next : idx_x_next + nx] = np.eye(nx)
+
+        n_ineq = 0
+        for constraint, time_indices in self.constraints:
+            if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
+                continue
+            resolved_indices = self.constraints.resolve_indices(time_indices, N)
+            nc = constraint.nc
+            n_ineq += len(resolved_indices) * nc
+
+        if n_ineq > 0:
+            A_ineq = np.zeros((n_ineq, n_vars))
+            uba_ineq = np.zeros(n_ineq)
+            lba_ineq = np.zeros(n_ineq)
+
+            curr_row = 0
+            for constraint, time_indices in self.constraints:
+                if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
+                    continue
+
+                resolved_indices = self.constraints.resolve_indices(time_indices, N)
+                nc = constraint.nc
+
+                for k in resolved_indices:
+                    if k == N:
+                        idx_x = N * (nx + nu)
+                        if constraint.F is not None:
+                            A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = constraint.F
+                    else:
+                        idx_x = k * (nx + nu)
+                        idx_u = idx_x + nx
+                        if constraint.F is not None:
+                            A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = constraint.F
+                        if isinstance(constraint, LinearConstraint) and constraint.G is not None:
+                            A_ineq[curr_row : curr_row + nc, idx_x + nx : idx_x + nx + nu] = constraint.G
+
+                    uba_ineq[curr_row : curr_row + nc] = constraint.h
+                    if constraint.is_equality:
+                        lba_ineq[curr_row : curr_row + nc] = constraint.h
+                    else:
+                        lba_ineq[curr_row : curr_row + nc] = -1e9
+
+                    curr_row += nc
+
+            A_c = np.vstack([A_eq, A_ineq])
+            uba = np.concatenate([np.zeros(n_eq), uba_ineq])
+            lba = np.concatenate([np.zeros(n_eq), lba_ineq])
+        else:
+            A_c = A_eq
+            uba = np.zeros(n_eq)
+            lba = np.zeros(n_eq)
+
+        H_sp_ca = ca.DM(H_sp)
+        A_c_ca = ca.DM(A_c)
+        opts = {**p_opts, **s_opts}
+        qp = {"h": H_sp_ca.sparsity(), "a": A_c_ca.sparsity()}
+        self._solver_obj = ca.conic("solver", solver, qp, opts)
+        self._qp_setup = {
+            "h": H_sp_ca,
+            "a": A_c_ca,
+            "g": g_vec,
+            "lba": lba,
+            "uba": uba,
+            "n_eq": n_eq,
+            "n_vars": n_vars,
+        }
+
+    def _setup_single_shooting(  # noqa: C901, PLR0912, PLR0915
+        self,
+        A_d_list: list[np.ndarray],
+        B_d_list: list[np.ndarray],
+        p_opts: dict[str, Any],
+        s_opts: dict[str, Any],
+        solver: str,
+    ) -> None:
+        nx = self.nx
+        nu = self.nu
+        N = self.N
+        n_vars = N * nu
+
+        S_x = np.zeros(((N + 1) * nx, nx))
+        S_u = np.zeros(((N + 1) * nx, N * nu))
+
+        S_x[:nx, :] = np.eye(nx)
+
+        for k in range(1, N + 1):
+            S_x[k * nx : (k + 1) * nx, :] = A_d_list[k - 1] @ S_x[(k - 1) * nx : k * nx, :]
+
+            for i in range(k):
+                if i == k - 1:
+                    S_u[k * nx : (k + 1) * nx, i * nu : (i + 1) * nu] = B_d_list[k - 1]
+                else:
+                    S_u[k * nx : (k + 1) * nx, i * nu : (i + 1) * nu] = (
+                        A_d_list[k - 1] @ S_u[(k - 1) * nx : k * nx, i * nu : (i + 1) * nu]
+                    )
+
+        Q_bar = np.zeros(((N + 1) * nx, (N + 1) * nx))
+        R_bar = np.zeros((N * nu, N * nu))
+        N_bar = np.zeros(((N + 1) * nx, N * nu))
+        q_bar = np.zeros((N + 1) * nx)
+        r_bar = np.zeros(N * nu)
+
+        for k in range(N):
+            Q_bar[k * nx : (k + 1) * nx, k * nx : (k + 1) * nx] = self.Q[k] if self.Q.ndim == 3 else self.Q
+            R_bar[k * nu : (k + 1) * nu, k * nu : (k + 1) * nu] = self.R[k] if self.R.ndim == 3 else self.R
+            N_bar[k * nx : (k + 1) * nx, k * nu : (k + 1) * nu] = (
+                self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+            )
+            q_bar[k * nx : (k + 1) * nx] = self.q[k] if self.q.ndim == 2 else self.q
+            r_bar[k * nu : (k + 1) * nu] = self.r[k] if self.r.ndim == 2 else self.r
+
+        Q_bar[N * nx : (N + 1) * nx, N * nx : (N + 1) * nx] = self.Qf
+        q_bar[N * nx : (N + 1) * nx] = self.qf
+
+        H_u = S_u.T @ Q_bar @ S_u + R_bar + S_u.T @ N_bar + N_bar.T @ S_u
+        H_sp_ca = ca.DM(H_u)
+
+        n_ineq = 0
+        for constraint, time_indices in self.constraints:
+            if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
+                continue
+            resolved_indices = self.constraints.resolve_indices(time_indices, N)
+            nc = constraint.nc
+            n_ineq += len(resolved_indices) * nc
+
+        if n_ineq > 0:
+            F_bar = np.zeros((n_ineq, (N + 1) * nx))
+            G_bar = np.zeros((n_ineq, N * nu))
+            h_bar = np.zeros(n_ineq)
+            lba_ineq = np.zeros(n_ineq)
+
+            curr_row = 0
+            for constraint, time_indices in self.constraints:
+                if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
+                    continue
+
+                resolved_indices = self.constraints.resolve_indices(time_indices, N)
+                nc = constraint.nc
+
+                for k in resolved_indices:
+                    if constraint.F is not None:
+                        F_bar[curr_row : curr_row + nc, k * nx : (k + 1) * nx] = constraint.F
+
+                    if k < N and isinstance(constraint, LinearConstraint) and constraint.G is not None:
+                        G_bar[curr_row : curr_row + nc, k * nu : (k + 1) * nu] = constraint.G
+
+                    h_bar[curr_row : curr_row + nc] = constraint.h
+
+                    if constraint.is_equality:
+                        lba_ineq[curr_row : curr_row + nc] = constraint.h
+                    else:
+                        lba_ineq[curr_row : curr_row + nc] = -1e9
+
+                    curr_row += nc
+
+            A_ineq_u = F_bar @ S_u + G_bar
+            A_c_ca = ca.DM(A_ineq_u)
+        else:
+            A_c_ca = ca.DM.zeros(0, n_vars)
+            F_bar = np.zeros((0, (N + 1) * nx))
+            h_bar = np.zeros(0)
+            lba_ineq = np.zeros(0)
+
+        opts = {**p_opts, **s_opts}
+        qp = {"h": H_sp_ca.sparsity(), "a": A_c_ca.sparsity()}
+        self._solver_obj = ca.conic("solver", solver, qp, opts)
+
+        self._qp_setup = {
+            "h": H_sp_ca,
+            "a": A_c_ca,
+            "S_x": S_x,
+            "S_u": S_u,
+            "S_xT_Q_bar_Su": S_x.T @ Q_bar @ S_u,
+            "S_xT_N_bar": S_x.T @ N_bar,
+            "q_barT_Su_plus_r_barT": q_bar.T @ S_u + r_bar.T,
+            "F_bar_S_x": F_bar @ S_x if n_ineq > 0 else None,
+            "h_bar": h_bar if n_ineq > 0 else None,
+            "lba_ineq": lba_ineq if n_ineq > 0 else None,
+            "n_ineq": n_ineq,
+            "n_vars": n_vars,
+        }
+
+    def setup(
+        self,
+        method: str = "multiple_shooting",
+        dynamics_type: str = "discrete",
+        solver: str = "qrqp",
+        plugin_opts: dict[str, Any] | None = None,
+        solver_opts: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Set up the QP solver for the given method and solver backend.
+
+        method: "multiple_shooting" (sparse) or "single_shooting" (condensed)
+        dynamics_type: "discrete" or "continuous" (will be exactly discretized using ZOH)
+        solver: The backend solver for ca.qpsol (e.g. 'qrqp', 'osqp').
+        """
+        self._method = method
+        A_d_list, B_d_list = self._discretize_dynamics(dynamics_type)
+
         p_opts = {}
         s_opts = {}
         if plugin_opts is not None:
@@ -928,252 +1147,21 @@ class LinearOCP:
             s_opts.update(solver_opts)
 
         if method == "multiple_shooting":
-            n_vars = (N + 1) * nx + N * nu
-
-            H_sp = np.zeros((n_vars, n_vars))
-            g_vec = np.zeros(n_vars)
-
-            for k in range(N):
-                Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
-                Rk = self.R[k] if self.R.ndim == 3 else self.R
-                N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
-                qk = self.q[k] if self.q.ndim == 2 else self.q
-                rk = self.r[k] if self.r.ndim == 2 else self.r
-
-                idx_x = k * (nx + nu)
-                idx_u = idx_x + nx
-                H_sp[idx_x : idx_x + nx, idx_x : idx_x + nx] = Qk
-                H_sp[idx_u : idx_u + nu, idx_u : idx_u + nu] = Rk
-                if np.any(N_cross_k):
-                    H_sp[idx_x : idx_x + nx, idx_u : idx_u + nu] = N_cross_k
-                    H_sp[idx_u : idx_u + nu, idx_x : idx_x + nx] = N_cross_k.T
-
-                g_vec[idx_x : idx_x + nx] = qk
-                g_vec[idx_u : idx_u + nu] = rk
-
-            idx_xN = N * (nx + nu)
-            H_sp[idx_xN : idx_xN + nx, idx_xN : idx_xN + nx] = self.Qf
-            g_vec[idx_xN : idx_xN + nx] = self.qf
-
-            n_eq = (N + 1) * nx
-            A_eq = np.zeros((n_eq, n_vars))
-
-            A_eq[:nx, :nx] = np.eye(nx)
-
-            for k in range(N):
-                row_idx = (k + 1) * nx
-                idx_x = k * (nx + nu)
-                idx_u = idx_x + nx
-                idx_x_next = (k + 1) * (nx + nu)
-
-                A_eq[row_idx : row_idx + nx, idx_x : idx_x + nx] = -A_d_list[k]
-                A_eq[row_idx : row_idx + nx, idx_u : idx_u + nu] = -B_d_list[k]
-                A_eq[row_idx : row_idx + nx, idx_x_next : idx_x_next + nx] = np.eye(nx)
-
-            n_ineq = 0
-            # Pre-calculate total number of constraints
-            for constraint, time_indices in self.constraints:
-                if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
-                    continue
-                resolved_indices = self.constraints.resolve_indices(time_indices, N)
-                nc = constraint.nc
-                n_ineq += len(resolved_indices) * nc
-
-            if n_ineq > 0:
-                A_ineq = np.zeros((n_ineq, n_vars))
-                uba_ineq = np.zeros(n_ineq)
-                lba_ineq = np.zeros(n_ineq)
-
-                curr_row = 0
-                for constraint, time_indices in self.constraints:
-                    if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
-                        continue
-
-                    resolved_indices = self.constraints.resolve_indices(time_indices, N)
-                    nc = constraint.nc
-
-                    for k in resolved_indices:
-                        if k == N:
-                            idx_x = N * (nx + nu)
-                            if constraint.F is not None:
-                                A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = constraint.F
-                        else:
-                            idx_x = k * (nx + nu)
-                            idx_u = idx_x + nx
-                            if constraint.F is not None:
-                                A_ineq[curr_row : curr_row + nc, idx_x : idx_x + nx] = constraint.F
-                            if isinstance(constraint, LinearConstraint) and constraint.G is not None:
-                                A_ineq[curr_row : curr_row + nc, idx_x + nx : idx_x + nx + nu] = constraint.G
-
-                        uba_ineq[curr_row : curr_row + nc] = constraint.h
-                        if constraint.is_equality:
-                            lba_ineq[curr_row : curr_row + nc] = constraint.h
-                        else:
-                            lba_ineq[curr_row : curr_row + nc] = -1e9
-
-                        curr_row += nc
-
-                A_c = np.vstack([A_eq, A_ineq])
-                uba = np.concatenate([np.zeros(n_eq), uba_ineq])
-                lba = np.concatenate([np.zeros(n_eq), lba_ineq])
-            else:
-                A_c = A_eq
-                uba = np.zeros(n_eq)
-                lba = np.zeros(n_eq)
-
-            H_sp_ca = ca.DM(H_sp)
-            A_c_ca = ca.DM(A_c)
-            opts = {**p_opts, **s_opts}
-            qp = {"h": H_sp_ca.sparsity(), "a": A_c_ca.sparsity()}
-            self._solver_obj = ca.conic("solver", solver, qp, opts)
-            self._qp_setup = {
-                "h": H_sp_ca,
-                "a": A_c_ca,
-                "g": g_vec,
-                "lba": lba,
-                "uba": uba,
-                "n_eq": n_eq,
-                "n_vars": n_vars,
-            }
-
+            self._setup_multiple_shooting(A_d_list, B_d_list, p_opts, s_opts, solver)
         elif method == "single_shooting":
-            n_vars = N * nu
-
-            S_x = np.zeros(((N + 1) * nx, nx))
-            S_u = np.zeros(((N + 1) * nx, N * nu))
-
-            S_x[:nx, :] = np.eye(nx)
-
-            for k in range(1, N + 1):
-                S_x[k * nx : (k + 1) * nx, :] = A_d_list[k - 1] @ S_x[(k - 1) * nx : k * nx, :]
-
-                for i in range(k):
-                    if i == k - 1:
-                        S_u[k * nx : (k + 1) * nx, i * nu : (i + 1) * nu] = B_d_list[k - 1]
-                    else:
-                        S_u[k * nx : (k + 1) * nx, i * nu : (i + 1) * nu] = (
-                            A_d_list[k - 1] @ S_u[(k - 1) * nx : k * nx, i * nu : (i + 1) * nu]
-                        )
-
-            Q_bar = np.zeros(((N + 1) * nx, (N + 1) * nx))
-            R_bar = np.zeros((N * nu, N * nu))
-            N_bar = np.zeros(((N + 1) * nx, N * nu))
-            q_bar = np.zeros((N + 1) * nx)
-            r_bar = np.zeros(N * nu)
-
-            for k in range(N):
-                Q_bar[k * nx : (k + 1) * nx, k * nx : (k + 1) * nx] = self.Q[k] if self.Q.ndim == 3 else self.Q
-                R_bar[k * nu : (k + 1) * nu, k * nu : (k + 1) * nu] = self.R[k] if self.R.ndim == 3 else self.R
-                N_bar[k * nx : (k + 1) * nx, k * nu : (k + 1) * nu] = (
-                    self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
-                )
-                q_bar[k * nx : (k + 1) * nx] = self.q[k] if self.q.ndim == 2 else self.q
-                r_bar[k * nu : (k + 1) * nu] = self.r[k] if self.r.ndim == 2 else self.r
-
-            Q_bar[N * nx : (N + 1) * nx, N * nx : (N + 1) * nx] = self.Qf
-            q_bar[N * nx : (N + 1) * nx] = self.qf
-
-            H_u = S_u.T @ Q_bar @ S_u + R_bar + S_u.T @ N_bar + N_bar.T @ S_u
-            H_sp_ca = ca.DM(H_u)
-
-            n_ineq = 0
-            for constraint, time_indices in self.constraints:
-                if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
-                    continue
-                resolved_indices = self.constraints.resolve_indices(time_indices, N)
-                nc = constraint.nc
-                n_ineq += len(resolved_indices) * nc
-
-            if n_ineq > 0:
-                F_bar = np.zeros((n_ineq, (N + 1) * nx))
-                G_bar = np.zeros((n_ineq, N * nu))
-                h_bar = np.zeros(n_ineq)
-                lba_ineq = np.zeros(n_ineq)
-
-                curr_row = 0
-                for constraint, time_indices in self.constraints:
-                    if not isinstance(constraint, (LinearConstraint, TerminalLinearConstraint)):
-                        continue
-
-                    resolved_indices = self.constraints.resolve_indices(time_indices, N)
-                    nc = constraint.nc
-
-                    for k in resolved_indices:
-                        if constraint.F is not None:
-                            F_bar[curr_row : curr_row + nc, k * nx : (k + 1) * nx] = constraint.F
-
-                        if k < N and isinstance(constraint, LinearConstraint) and constraint.G is not None:
-                            G_bar[curr_row : curr_row + nc, k * nu : (k + 1) * nu] = constraint.G
-
-                        h_bar[curr_row : curr_row + nc] = constraint.h
-
-                        if constraint.is_equality:
-                            lba_ineq[curr_row : curr_row + nc] = constraint.h
-                        else:
-                            lba_ineq[curr_row : curr_row + nc] = -1e9
-
-                        curr_row += nc
-
-                A_ineq_u = F_bar @ S_u + G_bar
-                A_c_ca = ca.DM(A_ineq_u)
-            else:
-                A_c_ca = ca.DM.zeros(0, n_vars)
-                F_bar = np.zeros((0, (N + 1) * nx))
-                h_bar = np.zeros(0)
-                lba_ineq = np.zeros(0)
-
-            opts = {**p_opts, **s_opts}
-            qp = {"h": H_sp_ca.sparsity(), "a": A_c_ca.sparsity()}
-            self._solver_obj = ca.conic("solver", solver, qp, opts)
-
-            self._qp_setup = {
-                "h": H_sp_ca,
-                "a": A_c_ca,
-                "S_x": S_x,
-                "S_u": S_u,
-                "S_xT_Q_bar_Su": S_x.T @ Q_bar @ S_u,
-                "S_xT_N_bar": S_x.T @ N_bar,
-                "q_barT_Su_plus_r_barT": q_bar.T @ S_u + r_bar.T,
-                "F_bar_S_x": F_bar @ S_x if n_ineq > 0 else None,
-                "h_bar": h_bar if n_ineq > 0 else None,
-                "lba_ineq": lba_ineq if n_ineq > 0 else None,
-                "n_ineq": n_ineq,
-                "n_vars": n_vars,
-            }
-
+            self._setup_single_shooting(A_d_list, B_d_list, p_opts, s_opts, solver)
         else:
             msg = f"Unknown method: {method}"
             raise ValueError(msg)
 
-    def solve(  # noqa: PLR0915, PLR0912, C901  # TODO: refactor to fix PLR0915, PLR0912
+    def _validate_and_prepare_solve_inputs(  # noqa: C901
         self,
         x0: ArrayLike,
-        X_guess: ArrayLike | None = None,
-        U_guess: ArrayLike | None = None,
-        x_ref: ArrayLike | None = None,
-        u_ref: ArrayLike | None = None,
-    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
-        """
-        Solves the Linear OCP for a given initial state.
-
-        Args:
-            x0: Initial state as a numpy array or list.
-            X_guess: Optional initial guess for state trajectory of shape (N + 1, nx).
-            U_guess: Optional initial guess for control trajectory of shape (N, nu).
-            x_ref: Optional time-varying state reference of shape (N + 1, nx).
-            u_ref: Optional time-varying control reference of shape (N, nu).
-
-        Returns
-        -------
-            Tuple of (X_opt, U_opt, status)
-            - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
-            - U_opt: numpy array of optimal control trajectory of shape (N, nu)
-            - status: string indicating solver status
-        """
-        if self._solver_obj is None:
-            msg = "LinearOCP has not been set up. Call setup() first."
-            raise RuntimeError(msg)
-
+        X_guess: ArrayLike | None,
+        U_guess: ArrayLike | None,
+        x_ref: ArrayLike | None,
+        u_ref: ArrayLike | None,
+    ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
         x0_arr = np.asarray(x0, dtype=float).flatten()
         if x0_arr.shape != (self.nx,):
             msg = f"Initial state must have length {self.nx}"
@@ -1208,152 +1196,200 @@ class LinearOCP:
                 msg = f"u_ref must have shape ({self.N}, {self.nu}) or ({self.nu},)"
                 raise ValueError(msg)
 
-        if self._method == "multiple_shooting":
-            lba = self._qp_setup["lba"].copy()
-            uba = self._qp_setup["uba"].copy()
-            g_vec = self._qp_setup["g"].copy()
+        return x0_arr, X_guess, U_guess, X_ref_arr, U_ref_arr
 
-            # Apply tracking reference shifts to the linear cost term g_vec
-            if X_ref_arr is not None or U_ref_arr is not None:
-                for k in range(self.N):
-                    Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
-                    Rk = self.R[k] if self.R.ndim == 3 else self.R
-                    N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
+    def _solve_multiple_shooting(  # noqa: C901
+        self,
+        x0_arr: np.ndarray,
+        X_guess: np.ndarray | None,
+        U_guess: np.ndarray | None,
+        X_ref_arr: np.ndarray | None,
+        U_ref_arr: np.ndarray | None,
+    ) -> tuple[np.ndarray, np.ndarray, str]:
+        if self._solver_obj is None:
+            msg = "LinearOCP has not been set up. Call setup() first."
+            raise RuntimeError(msg)
 
-                    idx_x = k * (self.nx + self.nu)
-                    idx_u = idx_x + self.nx
+        lba = self._qp_setup["lba"].copy()
+        uba = self._qp_setup["uba"].copy()
+        g_vec = self._qp_setup["g"].copy()
 
-                    if X_ref_arr is not None:
-                        g_vec[idx_x : idx_x + self.nx] -= Qk @ X_ref_arr[k]
-                        if np.any(N_cross_k):
-                            g_vec[idx_u : idx_u + self.nu] -= N_cross_k.T @ X_ref_arr[k]
+        if X_ref_arr is not None or U_ref_arr is not None:
+            for k in range(self.N):
+                Qk = self.Q[k]
+                Rk = self.R[k]
+                N_cross_k = self.N_cross[k]
 
-                    if U_ref_arr is not None:
-                        g_vec[idx_u : idx_u + self.nu] -= Rk @ U_ref_arr[k]
-                        if np.any(N_cross_k):
-                            g_vec[idx_x : idx_x + self.nx] -= N_cross_k @ U_ref_arr[k]
+                idx_x = k * (self.nx + self.nu)
+                idx_u = idx_x + self.nx
 
                 if X_ref_arr is not None:
-                    idx_xN = self.N * (self.nx + self.nu)
-                    g_vec[idx_xN : idx_xN + self.nx] -= self.Qf @ X_ref_arr[self.N]
+                    g_vec[idx_x : idx_x + self.nx] -= Qk @ X_ref_arr[k]
+                    if np.any(N_cross_k):
+                        g_vec[idx_u : idx_u + self.nu] -= N_cross_k.T @ X_ref_arr[k]
 
-            # Update initial condition constraint: I * x_0 = x0
-            lba[: self.nx] = x0_arr
-            uba[: self.nx] = x0_arr
+                if U_ref_arr is not None:
+                    g_vec[idx_u : idx_u + self.nu] -= Rk @ U_ref_arr[k]
+                    if np.any(N_cross_k):
+                        g_vec[idx_x : idx_x + self.nx] -= N_cross_k @ U_ref_arr[k]
 
-            kwargs = {"h": self._qp_setup["h"], "g": g_vec, "a": self._qp_setup["a"], "lba": lba, "uba": uba}
-
-            if X_guess is not None or U_guess is not None:
-                x0_guess = np.zeros(self._qp_setup["n_vars"])
-                X_guess_used = X_guess if X_guess is not None else np.zeros((self.N + 1, self.nx))
-                U_guess_used = U_guess if U_guess is not None else np.zeros((self.N, self.nu))
-
-                for k in range(self.N):
-                    idx_x = k * (self.nx + self.nu)
-                    idx_u = idx_x + self.nx
-                    x0_guess[idx_x : idx_x + self.nx] = X_guess_used[k]
-                    x0_guess[idx_u : idx_u + self.nu] = U_guess_used[k]
-
+            if X_ref_arr is not None:
                 idx_xN = self.N * (self.nx + self.nu)
-                x0_guess[idx_xN : idx_xN + self.nx] = X_guess_used[self.N]
-                kwargs["x0"] = x0_guess
+                g_vec[idx_xN : idx_xN + self.nx] -= self.Qf @ X_ref_arr[self.N]
 
-            res = self._solver_obj(**kwargs)
+        lba[: self.nx] = x0_arr
+        uba[: self.nx] = x0_arr
 
-            z_opt = np.array(res["x"]).flatten()
-            status = self._solver_obj.stats()["return_status"]
+        kwargs = {"h": self._qp_setup["h"], "g": g_vec, "a": self._qp_setup["a"], "lba": lba, "uba": uba}
 
-            # Unpack z = [x_0, u_0, x_1, u_1, ..., u_{N-1}, x_N]
-            X_opt = np.zeros((self.N + 1, self.nx))
-            U_opt = np.zeros((self.N, self.nu))
+        if X_guess is not None or U_guess is not None:
+            x0_guess = np.zeros(self._qp_setup["n_vars"])
+            X_guess_used = X_guess if X_guess is not None else np.zeros((self.N + 1, self.nx))
+            U_guess_used = U_guess if U_guess is not None else np.zeros((self.N, self.nu))
 
             for k in range(self.N):
                 idx_x = k * (self.nx + self.nu)
                 idx_u = idx_x + self.nx
-                X_opt[k, :] = z_opt[idx_x : idx_x + self.nx]
-                U_opt[k, :] = z_opt[idx_u : idx_u + self.nu]
+                x0_guess[idx_x : idx_x + self.nx] = X_guess_used[k]
+                x0_guess[idx_u : idx_u + self.nu] = U_guess_used[k]
 
             idx_xN = self.N * (self.nx + self.nu)
-            X_opt[self.N, :] = z_opt[idx_xN : idx_xN + self.nx]
+            x0_guess[idx_xN : idx_xN + self.nx] = X_guess_used[self.N]
+            kwargs["x0"] = x0_guess
 
-        elif self._method == "single_shooting":
-            # Calculate updated q_bar and r_bar based on x_ref and u_ref
-            q_bar = np.zeros((self.N + 1) * self.nx)
-            r_bar = np.zeros(self.N * self.nu)
+        res = self._solver_obj(**kwargs)
 
-            for k in range(self.N):
-                Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
-                Rk = self.R[k] if self.R.ndim == 3 else self.R
-                N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
-                qk = self.q[k] if self.q.ndim == 2 else self.q
-                rk = self.r[k] if self.r.ndim == 2 else self.r
+        z_opt = np.array(res["x"]).flatten()
+        status = self._solver_obj.stats()["return_status"]
 
-                if X_ref_arr is not None:
-                    qk = qk - Qk @ X_ref_arr[k]
-                    if np.any(N_cross_k):
-                        rk = rk - N_cross_k.T @ X_ref_arr[k]
+        X_opt = np.zeros((self.N + 1, self.nx))
+        U_opt = np.zeros((self.N, self.nu))
 
-                if U_ref_arr is not None:
-                    rk = rk - Rk @ U_ref_arr[k]
-                    if np.any(N_cross_k):
-                        qk = qk - N_cross_k @ U_ref_arr[k]
+        for k in range(self.N):
+            idx_x = k * (self.nx + self.nu)
+            idx_u = idx_x + self.nx
+            X_opt[k, :] = z_opt[idx_x : idx_x + self.nx]
+            U_opt[k, :] = z_opt[idx_u : idx_u + self.nu]
 
-                q_bar[k * self.nx : (k + 1) * self.nx] = qk
-                r_bar[k * self.nu : (k + 1) * self.nu] = rk
-
-            qf = self.qf.copy()
-            if X_ref_arr is not None:
-                qf = qf - self.Qf @ X_ref_arr[self.N]
-            q_bar[self.N * self.nx : (self.N + 1) * self.nx] = qf
-
-            # g_u(x0) = (x_0^T S_x^T Q_bar S_u + x_0^T S_x^T N_bar + q_bar^T S_u + r_bar^T)^T
-            q_barT_Su_plus_r_barT = q_bar.T @ self._qp_setup["S_u"] + r_bar.T
-
-            g_u_T = (
-                x0_arr.T @ self._qp_setup["S_xT_Q_bar_Su"]
-                + x0_arr.T @ self._qp_setup["S_xT_N_bar"]
-                + q_barT_Su_plus_r_barT
-            )
-            g_u = g_u_T.T
-
-            kwargs = {"h": self._qp_setup["h"], "g": g_u, "a": self._qp_setup["a"]}
-
-            if self._qp_setup["n_ineq"] > 0:
-                # lba <= A U <= uba
-                # A_ineq_u U <= h_bar - F_bar S_x x_0
-                # Be careful: for equality constraints we need lba to match uba dynamically
-                uba = self._qp_setup["h_bar"] - self._qp_setup["F_bar_S_x"] @ x0_arr
-                lba = self._qp_setup["lba_ineq"].copy()
-
-                # Where lba != -1e9 (equality constraints), set lba = uba
-                eq_mask = lba != -1e9
-                lba[eq_mask] = uba[eq_mask]
-
-                kwargs["lba"] = lba
-                kwargs["uba"] = uba
-
-            if U_guess is not None:
-                kwargs["x0"] = U_guess.flatten()
-            elif X_guess is not None:
-                # Provide zeros for control guess if only X_guess is given,
-                # since single shooting only takes U as primal variables.
-                kwargs["x0"] = np.zeros(self.N * self.nu)
-
-            res = self._solver_obj(**kwargs)
-
-            U_vec = np.array(res["x"]).flatten()
-            status = self._solver_obj.stats()["return_status"]
-
-            # Reconstruct X_opt and U_opt
-            U_opt = U_vec.reshape((self.N, self.nu))
-            X_vec = self._qp_setup["S_x"] @ x0_arr + self._qp_setup["S_u"] @ U_vec
-            X_opt = X_vec.reshape((self.N + 1, self.nx))
-
-        else:
-            msg = f"Unknown method: {self._method}"
-            raise ValueError(msg)
+        idx_xN = self.N * (self.nx + self.nu)
+        X_opt[self.N, :] = z_opt[idx_xN : idx_xN + self.nx]
 
         return X_opt, U_opt, status
+
+    def _solve_single_shooting(  # noqa: C901
+        self,
+        x0_arr: np.ndarray,
+        X_guess: np.ndarray | None,
+        U_guess: np.ndarray | None,
+        X_ref_arr: np.ndarray | None,
+        U_ref_arr: np.ndarray | None,
+    ) -> tuple[np.ndarray, np.ndarray, str]:
+        if self._solver_obj is None:
+            msg = "LinearOCP has not been set up. Call setup() first."
+            raise RuntimeError(msg)
+
+        q_bar = np.zeros((self.N + 1) * self.nx)
+        r_bar = np.zeros(self.N * self.nu)
+
+        for k in range(self.N):
+            Qk = self.Q[k]
+            Rk = self.R[k]
+            N_cross_k = self.N_cross[k]
+            qk = self.q[k]
+            rk = self.r[k]
+
+            if X_ref_arr is not None:
+                qk = qk - Qk @ X_ref_arr[k]
+                if np.any(N_cross_k):
+                    rk = rk - N_cross_k.T @ X_ref_arr[k]
+
+            if U_ref_arr is not None:
+                rk = rk - Rk @ U_ref_arr[k]
+                if np.any(N_cross_k):
+                    qk = qk - N_cross_k @ U_ref_arr[k]
+
+            q_bar[k * self.nx : (k + 1) * self.nx] = qk
+            r_bar[k * self.nu : (k + 1) * self.nu] = rk
+
+        qf = self.qf.copy()
+        if X_ref_arr is not None:
+            qf = qf - self.Qf @ X_ref_arr[self.N]
+        q_bar[self.N * self.nx : (self.N + 1) * self.nx] = qf
+
+        q_barT_Su_plus_r_barT = q_bar.T @ self._qp_setup["S_u"] + r_bar.T
+
+        g_u_T = (
+            x0_arr.T @ self._qp_setup["S_xT_Q_bar_Su"] + x0_arr.T @ self._qp_setup["S_xT_N_bar"] + q_barT_Su_plus_r_barT
+        )
+        g_u = g_u_T.T
+
+        kwargs = {"h": self._qp_setup["h"], "g": g_u, "a": self._qp_setup["a"]}
+
+        if self._qp_setup["n_ineq"] > 0:
+            uba = self._qp_setup["h_bar"] - self._qp_setup["F_bar_S_x"] @ x0_arr
+            lba = self._qp_setup["lba_ineq"].copy()
+
+            eq_mask = lba != -1e9
+            lba[eq_mask] = uba[eq_mask]
+
+            kwargs["lba"] = lba
+            kwargs["uba"] = uba
+
+        if U_guess is not None:
+            kwargs["x0"] = U_guess.flatten()
+        elif X_guess is not None:
+            kwargs["x0"] = np.zeros(self.N * self.nu)
+
+        res = self._solver_obj(**kwargs)
+
+        U_vec = np.array(res["x"]).flatten()
+        status = self._solver_obj.stats()["return_status"]
+
+        U_opt = U_vec.reshape((self.N, self.nu))
+        X_vec = self._qp_setup["S_x"] @ x0_arr + self._qp_setup["S_u"] @ U_vec
+        X_opt = X_vec.reshape((self.N + 1, self.nx))
+
+        return X_opt, U_opt, status
+
+    def solve(
+        self,
+        x0: ArrayLike,
+        X_guess: ArrayLike | None = None,
+        U_guess: ArrayLike | None = None,
+        x_ref: ArrayLike | None = None,
+        u_ref: ArrayLike | None = None,
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], str]:
+        """
+        Solves the Linear OCP for a given initial state.
+
+        Args:
+            x0: Initial state as a numpy array or list.
+            X_guess: Optional initial guess for state trajectory of shape (N + 1, nx).
+            U_guess: Optional initial guess for control trajectory of shape (N, nu).
+            x_ref: Optional time-varying state reference of shape (N + 1, nx).
+            u_ref: Optional time-varying control reference of shape (N, nu).
+
+        Returns
+        -------
+            Tuple of (X_opt, U_opt, status)
+            - X_opt: numpy array of optimal state trajectory of shape (N + 1, nx)
+            - U_opt: numpy array of optimal control trajectory of shape (N, nu)
+            - status: string indicating solver status
+        """
+        if self._solver_obj is None:
+            msg = "LinearOCP has not been set up. Call setup() first."
+            raise RuntimeError(msg)
+
+        x0_arr, X_guess, U_guess, X_ref_arr, U_ref_arr = self._validate_and_prepare_solve_inputs(
+            x0, X_guess, U_guess, x_ref, u_ref
+        )
+
+        if self._method == "multiple_shooting":
+            return self._solve_multiple_shooting(x0_arr, X_guess, U_guess, X_ref_arr, U_ref_arr)
+        if self._method == "single_shooting":
+            return self._solve_single_shooting(x0_arr, X_guess, U_guess, X_ref_arr, U_ref_arr)
+        msg = f"Unknown method: {self._method}"
+        raise ValueError(msg)
 
     def calculate_trajectory_cost(
         self,
@@ -1394,11 +1430,11 @@ class LinearOCP:
         total_cost = 0.0
 
         for k in range(self.N):
-            Qk = self.Q[k] if self.Q.ndim == 3 else self.Q
-            Rk = self.R[k] if self.R.ndim == 3 else self.R
-            N_cross_k = self.N_cross[k] if self.N_cross.ndim == 3 else self.N_cross
-            qk = self.q[k] if self.q.ndim == 2 else self.q
-            rk = self.r[k] if self.r.ndim == 2 else self.r
+            Qk = self.Q[k]
+            Rk = self.R[k]
+            N_cross_k = self.N_cross[k]
+            qk = self.q[k]
+            rk = self.r[k]
 
             x_k = X_arr[k]
             u_k = U_arr[k]

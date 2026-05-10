@@ -157,7 +157,7 @@ def run_simulation(mpc_controller):
     for _i in range(n_steps):
         # Solve MPC using wrapper step
         try:
-            u_k = mpc_controller.step(x)
+            u_k, _status = mpc_controller.step(x)
         except RuntimeError as e:
             print(f"MPC solve failed at step {_i}: {e}")
             break
