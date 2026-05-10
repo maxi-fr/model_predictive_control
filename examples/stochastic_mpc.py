@@ -99,7 +99,7 @@ nominal_mpc = LinearMPC(linear_ocp=nominal_ocp, setup_args={"solver": "osqp"})
 
 # %% [markdown]
 # ## 4. Formulate Chance Constrained MPC
-# For chance constraints $P(p_k \le p_{max}) \ge 1 - \epsilon$, we tighten the constraint.
+# For chance constraints $P(p_k \le p_{max}) \ge 1 - \epsilon$, we tighten the constraint. 
 # Since $x_{k+1} = A x_k + B u_k + w_k$, the error covariance propagates as $\Sigma_{k+1} = A \Sigma_k A^T + \Sigma_w$.
 # For simplicity in this example, we assume open-loop variance propagation over the horizon to compute the tightening.
 

@@ -12,10 +12,8 @@ dependencies = [
     "casadi>=3.7.2",
     "ipykernel>=7.2.0",
     "matplotlib>=3.10.8",
-    "nbmake>=1.5.5",
     "numpy>=2.4.3",
     "pandas>=3.0.2",
-    "pytest>=9.0.2",
     "scipy>=1.17.1",
     "scipy-stubs>=1.17.1.3",
 ]
@@ -30,6 +28,7 @@ dev = [
     "validate-pyproject>=0.23",
     "pytest-benchmark>=5.2.3",
     "pandas-stubs>=3.0.0.260204",
+    "nbmake>=1.5.5",
 ]
 
 
@@ -93,7 +92,7 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 minversion = "6.0"
 # Added -v for more detail and --cov to integrate coverage
-addopts = "-ra -q -v --cov=model_predictive_control"
+addopts = "-ra -q -v --cov=model_predictive_control --nbmake"
 testpaths = ["tests", "benchmarks"]
 
 [tool.mypy]
