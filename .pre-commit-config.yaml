@@ -74,7 +74,6 @@ repos:
         language: system
         types: [python]
         pass_filenames: true
-        exclude: ^examples/
 
       - id: test-notebooks
         name: Test Jupyter Notebook Execution

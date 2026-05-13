@@ -1210,7 +1210,7 @@ setuptools==81.0.0 \
     #   model-predictive-control
     #   scikit-build
     #   torch
-simulate @ git+https://github.com/maxi-fr/simulate@3547a6716096fe6c6d53796349222bfe3b22ca69
+simulate @ git+https://github.com/maxi-fr/simulate@e32a7f829eeb061ce230e5926a35a3b86caaea70
     # via model-predictive-control
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \

@@ -6,6 +6,10 @@
 #       format_name: percent
 #       format_version: '1.3'
 #       jupytext_version: 1.16.1
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -15,12 +19,18 @@
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scipy.stats as st
+from simulate.estimator import IdentityEstimator
+from simulate.reference import StepReference
+from simulate.sensor import GaussianSensor
+from simulate.simulation import Simulation
 
 from model_predictive_control.constraints import ConstraintList, LinearConstraint
-from model_predictive_control.dynamics import LinearDynamics
+from model_predictive_control.dynamics import DynamicsLog, LinearDynamics
 from model_predictive_control.mpc import LinearMPC
 from model_predictive_control.ocp import LinearOCP
+from model_predictive_control.plots import plot_controls
 
 # %% [markdown]
 # ## 1. System Dynamics
@@ -28,7 +38,6 @@ from model_predictive_control.ocp import LinearOCP
 # $m \ddot{p} + c \dot{p} + k p = u$
 #
 # where $p$ is position, $v$ is velocity, and $u$ is the control force.
-# We discretize this using exact forward Euler or simple zero-order hold approximation.
 
 # %%
 # Parameters
@@ -41,17 +50,43 @@ dt = 0.1  # sampling time
 Ac = np.array([[0, 1], [-k / m, -c / m]])
 Bc = np.array([[0], [1 / m]])
 
-# Discrete-time matrices (Euler approximation for simplicity)
+# Discrete-time matrices (Euler approximation)
 A = np.eye(2) + Ac * dt
 B = Bc * dt
 
 nx = A.shape[1]
 nu = B.shape[1]
 
-dynamics = LinearDynamics(A=A, B=B, dt=dt)
+# %% [markdown]
+# ## 2. Stochastic Dynamics Implementation
+# To simulate the system with noise using the `simulate` framework, we subclass `LinearDynamics` to include additive Gaussian noise in the `update` step.
+
+# %%
+class StochasticLinearDynamics(LinearDynamics):
+    """Linear dynamics with additive Gaussian noise."""
+
+    def __init__(self, A: np.ndarray, B: np.ndarray, Sigma_w: np.ndarray, dt: float = 0.1, seed: int = 42) -> None:
+        super().__init__(A, B, dt=dt)
+        self.Sigma_w = Sigma_w
+        self.seed = seed
+        self.rng = np.random.default_rng(seed)
+
+    def reset_rng(self) -> None:
+        """Reset the random number generator to the initial seed."""
+        self.rng = np.random.default_rng(self.seed)
+
+    def update(self, t: float, u: float | np.ndarray) -> tuple[float | np.ndarray, DynamicsLog]:
+        """Advance the dynamics and add noise."""
+        u_vec = self.to_col_vec(u).flatten()
+        # Nominal discrete step
+        self.x = np.asarray(self.f(self.x, u_vec)).flatten()
+        # Add additive noise: w ~ N(0, Sigma_w)
+        noise = self.rng.multivariate_normal(np.zeros(self.nx), self.Sigma_w)
+        self.x += noise
+        return self.from_col_vec(self.x), DynamicsLog(x=self.x.copy())
 
 # %% [markdown]
-# ## 2. Noise Characteristics
+# ## 3. Noise Characteristics
 # We assume additive zero-mean Gaussian noise on the states:
 # $x_{k+1} = A x_k + B u_k + w_k$ where $w_k \sim \mathcal{N}(0, \Sigma_w)$
 
@@ -61,47 +96,59 @@ sigma_w_pos = 0.05
 sigma_w_vel = 0.02
 Sigma_w = np.diag([sigma_w_pos**2, sigma_w_vel**2])
 
-# Use modern numpy random generator
-rng = np.random.default_rng(42)
+# Create the plant
+plant = StochasticLinearDynamics(A=A, B=B, Sigma_w=Sigma_w, dt=dt, seed=42)
 
 # %% [markdown]
-# ## 3. Formulate Nominal MPC
-# We design a standard MPC controller aiming to regulate the system to the origin, subject to state bounds (position bounds) and control bounds.
+# ## 4. Formulate Nominal MPC
+# Standard MPC controller aiming to regulate the system to the origin, subject to state and control bounds.
 
 # %%
 # Objective
-Q = np.diag([10.0, 1.0])
+Q = np.diag([3000.0, 0.0])
 R = np.array([[0.1]])
 
 # Constraints
-p_max = 1.0
-p_min = -1.0
+p_max = 1.5
 u_max = 2.0
 u_min = -2.0
 
-N = 20
+N = 10
 
 nominal_state_constraints = ConstraintList()
-# We use LinearConstraint for position limits. x = [p, v]^T
-# p <= p_max => F x <= h where F = [1, 0], h = [p_max]
-# -p <= -p_min => F x <= h where F = [-1, 0], h = [-p_min]
+# Position limits: p <= p_max
 nominal_state_constraints.add(LinearConstraint(h=np.array([p_max]), F=np.array([[1.0, 0.0]]), nu=nu), slice(1, None))
-nominal_state_constraints.add(LinearConstraint(h=np.array([-p_min]), F=np.array([[-1.0, 0.0]]), nu=nu), slice(1, None))
 
-# Control limits
+# Control limits: u_min <= u <= u_max
 nominal_state_constraints.add(LinearConstraint(h=np.array([u_max]), G=np.array([[1.0]]), nx=nx), slice(0, N))
 nominal_state_constraints.add(LinearConstraint(h=np.array([-u_min]), G=np.array([[-1.0]]), nx=nx), slice(0, N))
 
-# We need to use LinearOCP for the formulation
-nominal_ocp = LinearOCP(dynamics=dynamics, Q=Q, R=R, N=N, dt=dt, constraints=nominal_state_constraints)
-
+nominal_ocp = LinearOCP(dynamics=plant, Q=Q, R=R, N=N, dt=dt, constraints=nominal_state_constraints)
 nominal_mpc = LinearMPC(linear_ocp=nominal_ocp, dt=dt, setup_args={"solver": "osqp"})
 
+# %%
+n_steps = 50
+t_end = n_steps * dt
+x0 = np.array([0.0, 0.0])  # Start near the boundary
+
+# Simulation components
+ref = StepReference(dt=dt, step_value=np.array([1.0, 0.0]))
+sensor = GaussianSensor(dt=dt, std_dev=0.0)  # Perfect sensing
+estimator = IdentityEstimator(dt=dt)
+
+# 1. Run Nominal MPC
+plant.x = x0.copy()
+plant.reset_rng()
+sim_nom = Simulation(
+    t_end=t_end, plant=plant, reference=ref, sensor=sensor, estimator=estimator, controller=nominal_mpc
+)
+print("Running Nominal MPC...")
+sim_nom.run()
+
 # %% [markdown]
-# ## 4. Formulate Chance Constrained MPC
-# For chance constraints $P(p_k \le p_{max}) \ge 1 - \epsilon$, we tighten the constraint. 
-# Since $x_{k+1} = A x_k + B u_k + w_k$, the error covariance propagates as $\Sigma_{k+1} = A \Sigma_k A^T + \Sigma_w$.
-# For simplicity in this example, we assume open-loop variance propagation over the horizon to compute the tightening.
+# ## 5. Formulate Chance Constrained MPC
+# For chance constraints $P(p_k \le p_{max}) \ge 1 - \epsilon$, we tighten the constraints using the propagated variance. 
+# We use time-varying tightening to ensure feasibility near the initial condition.
 
 # %%
 epsilon = 0.05  # 5% violation probability
@@ -109,97 +156,87 @@ z_val = st.norm.ppf(1 - epsilon)
 
 # Compute variance propagation over horizon N
 Sigma_k = np.zeros((2, 2))
-pos_variance_horizon = []
-
-for _i in range(N):
-    pos_variance_horizon.append(Sigma_k[0, 0])
-    Sigma_k = A @ Sigma_k @ A.T + Sigma_w
-
-# For a strict chance constraint, we tighten the bounds by z_val * std_dev
-# To keep it simple, we'll take the maximum tightening over the horizon and apply it uniformly
-max_std_dev = np.sqrt(max(pos_variance_horizon))
-tightening = z_val * max_std_dev
-
-print(f"Constraint tightening margin: {tightening:.3f}")
-
-cc_p_max = p_max - tightening
-cc_p_min = p_min + tightening
-
 cc_state_constraints = ConstraintList()
-cc_state_constraints.add(LinearConstraint(h=np.array([cc_p_max]), F=np.array([[1.0, 0.0]]), nu=nu), slice(1, None))
-cc_state_constraints.add(LinearConstraint(h=np.array([-cc_p_min]), F=np.array([[-1.0, 0.0]]), nu=nu), slice(1, None))
+
+for k in range(1, N + 1):
+    # Propagate covariance: Sigma_{k+1} = A Sigma_k A^T + Sigma_w
+    # Here Sigma_k represents the uncertainty at step k
+    std_dev_pos = np.sqrt(Sigma_k[0, 0])
+    tightening = z_val * std_dev_pos
+
+    # Tighten state constraints
+    cc_p_max = p_max - tightening
+    print(cc_p_max)
+
+    cc_state_constraints.add(LinearConstraint(h=np.array([cc_p_max]), F=np.array([[1.0, 0.0]]), nu=nu), k)
+
+    # Update Sigma for next step
+    Sigma_k = A @ Sigma_k @ A.T + Sigma_w
 
 # Control limits (unchanged)
 cc_state_constraints.add(LinearConstraint(h=np.array([u_max]), G=np.array([[1.0]]), nx=nx), slice(0, N))
 cc_state_constraints.add(LinearConstraint(h=np.array([-u_min]), G=np.array([[-1.0]]), nx=nx), slice(0, N))
 
-cc_ocp = LinearOCP(dynamics=dynamics, Q=Q, R=R, N=N, dt=dt, constraints=cc_state_constraints)
-
+cc_ocp = LinearOCP(dynamics=plant, Q=Q, R=R, N=N, dt=dt, constraints=cc_state_constraints)
 cc_mpc = LinearMPC(linear_ocp=cc_ocp, dt=dt, setup_args={"solver": "osqp"})
 
 # %% [markdown]
-# ## 5. Closed-Loop Simulation
-# We simulate both controllers starting from an initial condition close to the bound. The same noise realization will be applied to both.
+# ## 6. Closed-Loop Simulation
+# We simulate both controllers using the `simulate.Simulation` class. We reset the plant's RNG before each run to ensure they experience the same noise sequence.
 
 # %%
-n_steps = 50
-x0 = np.array([0.8, 0.0])  # Start near the boundary
+# Simulation components
+ref = StepReference(dt=dt, step_value=np.array([1.0, 0.0]))
+sensor = GaussianSensor(dt=dt, std_dev=0.0)  # Perfect sensing
+estimator = IdentityEstimator(dt=dt)
 
-# Generate identical noise sequence for fair comparison
-noise_seq = rng.multivariate_normal(np.zeros(2), Sigma_w, size=n_steps)
-
-
-def run_simulation(mpc_controller: LinearMPC) -> tuple[np.ndarray, np.ndarray]:
-    """Run closed-loop simulation."""
-    x = x0.copy()
-    states = [x]
-    controls = []
-
-    for k in range(n_steps):
-        # Solve MPC using wrapper step
-        try:
-            u_k, _status = mpc_controller.step(t=k * dt, ref=None, x_hat=x)
-        except RuntimeError as e:
-            print(f"MPC solve failed at step {k}: {e}")
-            break
-
-        # Apply control and noise
-        u_val = u_k.item() if u_k.size == 1 else u_k
-        x_next = A @ x + B.flatten() * u_val + noise_seq[k]
-
-        states.append(x_next)
-        controls.append(u_k)
-        x = x_next
-
-    return np.array(states), np.array(controls)
-
-
-print("Running Nominal MPC...")
-states_nom, controls_nom = run_simulation(nominal_mpc)
-
+# 2. Run Chance Constrained MPC
+plant = StochasticLinearDynamics(A=A, B=B, Sigma_w=Sigma_w, dt=dt, seed=42)
+plant.x = x0.copy()
+plant.reset_rng()
+sim_cc = Simulation(t_end=t_end, plant=plant, reference=ref, sensor=sensor, estimator=estimator, controller=cc_mpc)
 print("Running Chance Constrained MPC...")
-states_cc, controls_cc = run_simulation(cc_mpc)
+sim_cc.run()
 
 # %% [markdown]
-# ## 6. Results
-# We plot the position over time to observe if the bounds are violated.
+# ## 7. Results
+# We extract the results from the simulation loggers and plot them.
 
 # %%
-time_nom = np.arange(len(states_nom)) * dt
+def extract_sim_results(sim: Simulation) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    results_df = pd.DataFrame(sim.logger.universal_logs)
+    time = results_df["t"].to_numpy()
+    X = np.array([log["y"] for log in sim.logger.universal_logs])
+    U = np.array([log["u"] for log in sim.logger.universal_logs])
+    X_open_loop = np.array([log["X_opt"] for log in sim.logger.component_logs["controller"]])
+    return time, X, U, X_open_loop
 
-plt.figure(figsize=(10, 6))
 
-plt.plot(time_nom, states_nom[:, 0], "r-", label="Nominal MPC")
-if len(states_cc) > 0:
-    plt.plot(np.arange(len(states_cc)) * dt, states_cc[:, 0], "b-", label="Chance Constrained MPC")
+time_nom, X_nom, U_nom, X_ol_nom = extract_sim_results(sim_nom)
+time_cc, X_cc, U_cc, X_ol_cc = extract_sim_results(sim_cc)
+
+# Plotting Position
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Nominal Results
+ax.plot(time_nom, X_nom[:, 0], "r-", label="Nominal MPC")
+# Chance Constrained Results
+ax.plot(time_cc, X_cc[:, 0], "b-", label="Chance Constrained MPC")
+
+ax.axhline(np.atleast_1d(ref.step_value)[0], label="ref.", linestyle="--")
 
 # Bounds
-plt.axhline(p_max, color="k", linestyle="--", label="Actual Bound ($p_{max}$)")
-plt.axhline(cc_p_max, color="g", linestyle=":", label="Tightened Bound")
+ax.axhline(p_max, color="k", linestyle="--", label="Actual Bound ($p_{max}$)")
 
-plt.xlabel("Time [s]")
-plt.ylabel("Position $p$")
-plt.legend()
-plt.title("Position vs Time")
-plt.grid(visible=True)
+ax.set_xlabel("Time [s]")
+ax.set_ylabel("Position $p$")
+ax.legend()
+ax.set_title("Stochastic MPC: Position vs Time")
+ax.grid(visible=True)
+plt.show()
+
+# Plotting Controls
+fig, ax = plt.subplots(figsize=(10, 4))
+plot_controls(time_nom, U_nom, labels=["Nominal Control"], fig=fig, ax=ax, title="Control Actions")
+plot_controls(time_cc, U_cc, labels=["CC Control"], fig=fig, ax=ax)
 plt.show()

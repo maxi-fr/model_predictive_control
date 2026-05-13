@@ -114,7 +114,7 @@ class MPC(Controller[MPCLog]):
 
         Args:
             t: Simulation time.
-            ref: Reference signal (state reference or tuple of (state_ref, control_ref)).
+            ref: Reference signal (state reference or trajectory).
             x_hat: Estimated state vector.
         """
         # Handle scalar zero from simulate.Simulation.run() initial state
@@ -128,15 +128,17 @@ class MPC(Controller[MPCLog]):
         else:
             x_current = x_hat_vec.flatten()
 
-        # Handle reference: either state reference or (state_ref, control_ref)
-        x_ref: np.ndarray | None = None
-        u_ref: np.ndarray | None = None
-        if isinstance(ref, tuple) and len(ref) == 2:
-            x_ref, u_ref = ref
+        # Handle reference: scalar, state array, (X_ref_horizon, U_ref_horizon) tuple, or None
+        x_ref: np.ndarray | None
+        u_ref: np.ndarray | None
+        if isinstance(ref, tuple):
+            x_ref, u_ref = ref[0], ref[1]
         elif isinstance(ref, float | int | np.floating | np.integer):
-            x_ref = np.atleast_1d(float(ref))
-        elif isinstance(ref, np.ndarray):
+            x_ref = np.full(self.nx, float(ref))
+            u_ref = None
+        else:
             x_ref = ref
+            u_ref = None
 
         X_opt, U_opt, status = self.ocp.solve(
             x0=x_current,

@@ -72,7 +72,7 @@ def test_mpc_step_and_shifting() -> None:
     mpc = MPC(ocp=ocp, setup_args=setup_args)
 
     x0 = np.array([1.0, 0.0])
-    u0, _log0 = mpc.step(t=0.0, ref=None, x_hat=x0)
+    u0, _log0 = mpc.step(t=0.0, ref=0.0, x_hat=x0)
 
     assert u0.shape == (1,)
     # After step, guesses should be shifted
@@ -82,7 +82,7 @@ def test_mpc_step_and_shifting() -> None:
 
     # Second step should run fine with warm-started guesses
     x1 = np.array([0.9, -0.1])
-    u1, _log1 = mpc.step(t=mpc.dt, ref=None, x_hat=x1)
+    u1, _log1 = mpc.step(t=mpc.dt, ref=0.0, x_hat=x1)
     assert u1.shape == (1,)
 
 
@@ -99,7 +99,7 @@ def test_mpc_solve_failure() -> None:
 
     x0 = np.array([100.0, 100.0])
     with pytest.raises(RuntimeError, match=r"solve failed at t=0.0 with status"):
-        mpc.step(t=0.0, ref=None, x_hat=x0)
+        mpc.step(t=0.0, ref=0.0, x_hat=x0)
 
 
 def setup_simple_linear_ocp() -> LinearOCP:
@@ -141,14 +141,14 @@ def test_linear_mpc_step_and_shifting() -> None:
     mpc = LinearMPC(linear_ocp=ocp, setup_args=setup_args)
 
     x0 = np.array([1.0, 0.0])
-    u0, _log0 = mpc.step(t=0.0, ref=None, x_hat=x0)
+    u0, _log0 = mpc.step(t=0.0, ref=0.0, x_hat=x0)
 
     assert u0.shape == (1,)
     np.testing.assert_array_equal(mpc._X_guess[-1], mpc._X_guess[-2])
     np.testing.assert_array_equal(mpc._U_guess[-1], mpc._U_guess[-2])
 
     x1 = np.array([[1.0, 0.1], [0.0, 1.0]]) @ x0 + np.array([[0.0], [0.1]]) @ u0
-    u1, _log1 = mpc.step(t=mpc.dt, ref=None, x_hat=x1)
+    u1, _log1 = mpc.step(t=mpc.dt, ref=0.0, x_hat=x1)
     assert u1.shape == (1,)
 
 
@@ -169,10 +169,9 @@ def test_linear_mpc_tracking() -> None:
 
     x0 = np.array([0.0, 0.0])
     x_ref_1d = np.array([1.0, 0.0])
-    u_ref_1d = np.array([0.0])
 
     # Pass 1D references, the wrapper should pass them down, and LinearOCP should tile them
-    u0, _log0 = mpc.step(t=0.0, ref=(x_ref_1d, u_ref_1d), x_hat=x0)
+    u0, _log0 = mpc.step(t=0.0, ref=x_ref_1d, x_hat=x0)
     assert u0.shape == (1,)
 
 

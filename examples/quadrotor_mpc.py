@@ -7,7 +7,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.16.1
 #   kernelspec:
-#     display_name: model-predictive-control (3.12.1)
+#     display_name: .venv
 #     language: python
 #     name: python3
 # ---
@@ -209,7 +209,8 @@ class TrajectoryReference(Reference[TrajectoryReferenceLog]):
 
     def step(self, t: float) -> tuple[np.ndarray, TrajectoryReferenceLog]:
         """Execute step."""
-        return self._execute_zoh(t, self.update)
+        result, log = self._execute_zoh(t, self.update)
+        return np.atleast_1d(result), log
 
     def update(self, t: float) -> tuple[Any, TrajectoryReferenceLog]:
         """Update reference."""
@@ -261,7 +262,7 @@ def patched_step(self: TrajectoryReference, t: float) -> tuple[np.ndarray, Traje
     return self.X_ref[k], log
 
 
-TrajectoryReference.step = patched_step
+TrajectoryReference.step = patched_step  # type: ignore[method-assign]
 
 
 def patched_mpc_step(self: MPC, t: float, ref: np.ndarray, x_hat: np.ndarray) -> tuple[np.ndarray, Any]:  # noqa: ARG001
@@ -273,7 +274,7 @@ def patched_mpc_step(self: MPC, t: float, ref: np.ndarray, x_hat: np.ndarray) ->
 
 
 original_mpc_step = mpc.step
-mpc.step = patched_mpc_step.__get__(mpc, MPC)
+mpc.step = patched_mpc_step.__get__(mpc, MPC)  # type: ignore[method-assign]
 
 ref_gen = TrajectoryReference(dt, X_ref_full, U_ref_full, N)
 sensor = GaussianSensor(dt, std_dev=0.0)

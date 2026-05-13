@@ -7,7 +7,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.16.1
 #   kernelspec:
-#     display_name: model-predictive-control (3.12.1)
+#     display_name: .venv
 #     language: python
 #     name: python3
 # ---
