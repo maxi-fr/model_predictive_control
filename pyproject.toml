@@ -34,6 +34,7 @@ dev = [
     "pytest-benchmark>=5.2.3",
     "pandas-stubs>=3.0.0.260204",
     "nbmake>=1.5.5",
+    "osqp>=1.1.3",
 ]
 
 

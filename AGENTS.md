@@ -1,72 +1,62 @@
-# Project specific instructions
+# AGENT instructions
 
-* uv is used for dependency management
+## Project Architecture
+
+* src/        # Implementations inside packages.
+* scripts/    # CLI entry points.
+* examples/  # Jupyter notebooks
+
+## Project specific instructions
+
+* uv is used for dependency management (prefer `uv add [package]` over editing the pyproject.toml) and to run scripts: uv run ...
+* use the ty LSP
 * Make sure no formatting, linting, type or test errors are present. Sometimes it might be allowed to selectively ingore rules if it makes the code cleaner
 
-    * ruff for linting and formatting: `uv run ruff check --fix --unsafe-fixes`
-    * mypy for type checking: `uv run mypy .`
-    * pytest for testing: `uv run pytest`
+**Standard Workflow:**
+Since `pre-commit` is configured to run all checks (ruff check with --fix --unsafe-fixes and format, ty, pytest, marimo checks, markdownlint), rely on it to verify your work.
 
-* You are working on a windows machine; use only PowerShell commands.
+## General instructions
 
-# General instructions
+### 1. Clarify Before Coding
 
-## 1. Think Before Coding
+Do not guess my intent. Before implementing:
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+* Explicitly look for missing constraints, edge cases, or unspoken assumptions in my prompt.
+* If multiple interpretations exist, present them - don't pick silently.
+* If a simpler approach exists, say so. Push back.
+* If something is unclear, stop. Name what's confusing. Ask.
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
+### 2. Simplicity First
 
 **Minimum code that solves the problem. Nothing speculative.**
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+* No features beyond what was asked.
+* No abstractions for single-use code.
+* No "flexibility" or "abstraction" that wasn't requested.
+* No error handling for impossible scenarios.
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-## 3. Surgical Changes
+### 3. Surgical Changes
 
 **Touch only what you must. Clean up only your own mess.**
 
 When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
 
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
+* Don't "improve" adjacent code, comments, or formatting.
+* Don't refactor things that aren't broken.
+* Match existing style, even if you'd do it differently.
 
-The test: Every changed line should trace directly to the user's request.
+However, integrate cleanly. Don't force square pegs into round holes. Do not contort new code to fit outdated, poorly written, or convoluted structures just to minimize the lines changed. Leave the immediate code better than you found it.
 
-## 4. Goal-Driven Execution
+### 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
 
 Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
 
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
+* "Add validation" → "Write tests for invalid inputs, then make them pass"
+* "Fix the bug" → "Write a test that reproduces it, then make it pass"
+* "Refactor X" → "Ensure tests pass before and after"
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+For multi-step tasks, break it down into sub-goals.
