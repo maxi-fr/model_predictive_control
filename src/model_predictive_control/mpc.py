@@ -160,12 +160,12 @@ class MPC(Controller[MPCLog]):
         self.last_X_opt = X_opt
         self.last_U_opt = U_opt
 
-        # Shift guesses for the next step
-        self._X_guess = np.roll(X_opt, -1, axis=0)
-        self._X_guess[-1, :] = self._X_guess[-2, :]
+        # Shift guesses for the next step in-place to avoid allocation
+        self._X_guess[:-1, :] = X_opt[1:, :]
+        self._X_guess[-1, :] = X_opt[-1, :]
 
-        self._U_guess = np.roll(U_opt, -1, axis=0)
-        self._U_guess[-1, :] = self._U_guess[-2, :]
+        self._U_guess[:-1, :] = U_opt[1:, :]
+        self._U_guess[-1, :] = U_opt[-1, :]
 
         u_opt_0 = U_opt[0]
 
