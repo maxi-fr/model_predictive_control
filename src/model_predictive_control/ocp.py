@@ -1,6 +1,6 @@
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import casadi as ca
 import numpy as np
@@ -92,7 +92,7 @@ class OCP:
         x_bar: ArrayLike,
         u_bar: ArrayLike,
         dynamics_type: str = "continuous",
-        integrator: Callable[[ca.Function, float], ca.Function] | None = None,
+        integrator: Callable[["Dynamics", float], ca.Function] | None = None,
         x_ref: ArrayLike | None = None,
         u_ref: ArrayLike | None = None,
     ) -> "LinearOCP":
@@ -439,7 +439,7 @@ class OCP:
         self,
         method: str = "multiple_shooting",
         dynamics_type: str = "continuous",
-        integrator: Callable[[ca.Function, float], ca.Function] | None = None,
+        integrator: Callable[["Dynamics", float], ca.Function] | None = None,
         solver: str = "ipopt",
         plugin_opts: dict[Any, Any] | None = None,
         solver_opts: dict[Any, Any] | None = None,
@@ -481,18 +481,18 @@ class OCP:
             self._U = self._opti.variable(nu, self.N)
             self._X = self._opti.variable(nx, self.N + 1)  # Still define it for later extraction
 
-            x_k = self._x0_param
+            x_k: ca.MX = self._x0_param
             self._opti.subject_to(self._X[:, 0] == x_k)
 
             cost = 0.0
             for k in range(self.N):
-                u_k = self._U[:, k]
+                u_k: ca.MX = self._U[:, k]
 
                 cost += self._get_stage_cost(k, x_k, u_k)
                 self._apply_stage_constraints(k, x_k, u_k)
 
                 # Dynamics
-                x_k = dyn_func(x_k, u_k)
+                x_k = cast("ca.MX", dyn_func(x_k, u_k))
                 self._opti.subject_to(self._X[:, k + 1] == x_k)  # Link to X so we can extract it easily
 
         elif method == "multiple_shooting":
@@ -503,8 +503,8 @@ class OCP:
 
             cost = 0.0
             for k in range(self.N):
-                x_k = self._X[:, k]
-                u_k = self._U[:, k]
+                x_k: ca.MX = self._X[:, k]
+                u_k: ca.MX = self._U[:, k]
 
                 cost += self._get_stage_cost(k, x_k, u_k)
                 self._apply_stage_constraints(k, x_k, u_k)
@@ -526,9 +526,9 @@ class OCP:
             # Hermite-Simpson direct collocation
             cost = 0.0
             for k in range(self.N):
-                x_k = self._X[:, k]
-                x_k_next = self._X[:, k + 1]
-                u_k = self._U[:, k]
+                x_k: ca.MX = self._X[:, k]
+                x_k_next: ca.MX = self._X[:, k + 1]
+                u_k: ca.MX = self._U[:, k]
 
                 cost += self._get_stage_cost(k, x_k, u_k)
                 self._apply_stage_constraints(k, x_k, u_k)

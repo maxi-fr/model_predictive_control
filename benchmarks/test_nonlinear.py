@@ -1,5 +1,7 @@
 """Benchmark for non-linear OCP."""
 
+from typing import Any
+
 import casadi as ca
 import numpy as np
 
@@ -77,7 +79,7 @@ def setup_inverted_pendulum_ocp() -> OCP:
     return ocp
 
 
-def test_nonlinear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def] # noqa: ANN001
+def test_nonlinear_ocp_solve(benchmark: Any) -> None:
     """Benchmark solving the non-linear OCP."""
     ocp = setup_inverted_pendulum_ocp()
     x0_val = np.array([0.0, 0.0, 0.5, 0.0])
@@ -97,7 +99,8 @@ def test_nonlinear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def]
     # We access the internal solver object to get stats for the last run
     try:
         if getattr(ocp, "_opti", None) is not None:
-            stats = ocp._opti.stats()  # type: ignore[union-attr] # noqa: SLF001
+            assert ocp._opti is not None
+            stats = ocp._opti.stats()
             iterations = stats.get("iter_count", -1)
         else:
             iterations = -1
@@ -107,7 +110,7 @@ def test_nonlinear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def]
     benchmark.extra_info["ipopt_iterations"] = iterations
 
 
-def test_nonlinear_mpc_step(benchmark) -> None:  # type: ignore[no-untyped-def] # noqa: ANN001
+def test_nonlinear_mpc_step(benchmark: Any) -> None:
     """Benchmark stepping the non-linear MPC loop."""
     ocp = setup_inverted_pendulum_ocp()
     setup_args = {

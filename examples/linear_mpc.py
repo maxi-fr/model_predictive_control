@@ -1,173 +1,264 @@
-# ---
-# jupyter:
-#   jupytext:
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
-#       jupytext_version: 1.16.1
-#   kernelspec:
-#     display_name: .venv
-#     language: python
-#     name: python3
-# ---
+import marimo
 
-# %% [markdown]
-# # Closed-Loop Linear Model Predictive Control
-#
-# This notebook demonstrates a closed-loop Model Predictive Control (MPC) simulation for a simple unstable linear 2D system using the `LinearOCP` class, which uses a QP formulation.
+__generated_with = "0.23.13"
+app = marimo.App()
 
-# %%
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from simulate.estimator import IdentityEstimator
-from simulate.reference import StepReference
-from simulate.sensor import GaussianSensor
-from simulate.simulation import Simulation
 
-from model_predictive_control.constraints import ConstraintList, LinearConstraint
-from model_predictive_control.dynamics import LinearDynamics
-from model_predictive_control.mpc import LinearMPC
-from model_predictive_control.ocp import LinearOCP
-from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
+@app.cell
+def _():
+    import marimo as mo
 
-# %% [markdown]
-# ## 1. Linear System Dynamics
-#
-# We define a generic unstable linear system $x_{k+1} = A x_k + B u_k$.
+    return (mo,)
 
-# %%
-A = np.array([[1.0, 0.1], [0.5, 1.0]])
-B = np.array([[0.0], [0.1]])
 
-nx = A.shape[1]
-nu = B.shape[1]
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # Closed-Loop Linear Model Predictive Control
 
-# %% [markdown]
-# ## 2. Objective Function and Constraints
-#
-# We use a standard quadratic objective to penalize state deviations and control effort, and box constraints for safety.
+    This notebook demonstrates a closed-loop Model Predictive Control (MPC) simulation for a simple unstable linear 2D system using the `LinearOCP` class, which uses a QP formulation.
+    """)
+    return
 
-# %%
-# Objective matrices
-Q = np.diag([100.0, 10.0])
-R = np.array([[0.1]])
 
-q = np.zeros(nx)
-r = np.zeros(nu)
-N_cross = np.zeros((nx, nu))
+@app.cell
+def _():
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from simulate.estimator import IdentityEstimator
+    from simulate.reference import StepReference
+    from simulate.sensor import GaussianSensor
+    from simulate.simulation import Simulation
 
-# Terminal objective
-Qf = np.diag([1000.0, 100.0])
+    from model_predictive_control.constraints import ConstraintList, LinearConstraint
+    from model_predictive_control.dynamics import LinearDynamics
+    from model_predictive_control.mpc import LinearMPC
+    from model_predictive_control.ocp import LinearOCP
+    from model_predictive_control.plots import plot_controls, plot_mpc_trajectories
 
-# Constraints
-# F x + G u <= h
-u_max_val = 50.0
-x_max_val = 2.0
+    return (
+        ConstraintList,
+        GaussianSensor,
+        IdentityEstimator,
+        LinearConstraint,
+        LinearDynamics,
+        LinearMPC,
+        LinearOCP,
+        Simulation,
+        StepReference,
+        np,
+        pd,
+        plot_controls,
+        plot_mpc_trajectories,
+        plt,
+    )
 
-# Box constraints
-F = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0], [0.0, 0.0], [0.0, 0.0]])
-G = np.array([[0.0], [0.0], [0.0], [0.0], [1.0], [-1.0]])
-h = np.array([x_max_val, x_max_val, x_max_val, x_max_val, u_max_val, u_max_val])
 
-# Terminal constraints (only on state)
-F_term = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]])
-h_term = np.array([x_max_val, x_max_val, x_max_val, x_max_val])
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 1. Linear System Dynamics
 
-# Bounds for plotting
-x_min = np.array([-x_max_val, -x_max_val])
-x_max = np.array([x_max_val, x_max_val])
-u_min = np.array([-u_max_val])
-u_max = np.array([u_max_val])
+    We define a generic unstable linear system $x_{k+1} = A x_k + B u_k$.
+    """)
+    return
 
-# %% [markdown]
-# ## 3. OCP Setup and Closed-Loop Simulation
 
-# %%
-N_horizon = 20
-N_sim = 40
-dt = 0.1
-t_end = N_sim * dt
+@app.cell
+def _(np):
+    A = np.array([[1.0, 0.1], [0.5, 1.0]])
+    B = np.array([[0.0], [0.1]])
 
-cl = ConstraintList()
-cl.add(LinearConstraint(F=F, G=G, h=h), range(N_horizon))
-cl.add(LinearConstraint(F=F_term, h=h_term, nu=nu), [N_horizon])
+    nx = A.shape[1]
+    nu = B.shape[1]
+    return A, B, nu, nx
 
-# Use LinearDynamics with dt
-dynamics = LinearDynamics(A, B, dt=dt)
 
-ocp = LinearOCP(
-    N=N_horizon,
-    dt=dt,
-    dynamics=dynamics,
-    Q=Q,
-    R=R,
-    constraints=cl,
-)
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 2. Objective Function and Constraints
 
-# Setup using LinearMPC wrapper with multiple shooting (sparse) and qrqp backend
-setup_args = {
-    "method": "multiple_shooting",
-    "dynamics_type": "discrete",
-    "solver": "qrqp",
-    "solver_opts": {"print_iter": False, "print_header": False},
-}
+    We use a standard quadratic objective to penalize state deviations and control effort, and box constraints for safety.
+    """)
+    return
 
-mpc = LinearMPC(linear_ocp=ocp, dt=dt, setup_args=setup_args)
 
-# Simulation setup
-x0_val = np.array([1.5, 0.0])
-dynamics.x = x0_val
+@app.cell
+def _(np, nu, nx):
+    # Objective matrices
+    Q = np.diag([100.0, 10.0])
+    R = np.array([[0.1]])
 
-ref = StepReference(dt=dt, step_value=np.zeros(nx))
-sensor = GaussianSensor(dt=dt, std_dev=0.0)
-estimator = IdentityEstimator(dt=dt)
+    np.zeros(nx)
+    np.zeros(nu)
+    np.zeros((nx, nu))
 
-sim = Simulation(t_end=t_end, plant=dynamics, reference=ref, sensor=sensor, estimator=estimator, controller=mpc)
+    # Terminal objective
+    np.diag([1000.0, 100.0])
 
-sim.run()
+    # Constraints
+    # F x + G u <= h
+    u_max_val = 50.0
+    x_max_val = 2.0
 
-# %% [markdown]
-# ## 4. Plot Results
+    # Box constraints
+    F = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0], [0.0, 0.0], [0.0, 0.0]])
+    G = np.array([[0.0], [0.0], [0.0], [0.0], [1.0], [-1.0]])
+    h = np.array([x_max_val, x_max_val, x_max_val, x_max_val, u_max_val, u_max_val])
 
-# %%
-# Extract results from logger
-results_df = pd.DataFrame(sim.logger.universal_logs)
-time_vec = results_df["t"].to_numpy()
+    # Terminal constraints (only on state)
+    F_term = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]])
+    h_term = np.array([x_max_val, x_max_val, x_max_val, x_max_val])
 
-# Extract X_closed_loop and X_open_loop from the logs
-X_closed_loop = np.array([log["y"] for log in sim.logger.universal_logs])
-U_closed_loop = np.array([log["u"] for log in sim.logger.universal_logs])
+    # Bounds for plotting
+    x_min = np.array([-x_max_val, -x_max_val])
+    x_max = np.array([x_max_val, x_max_val])
+    u_min = np.array([-u_max_val])
+    u_max = np.array([u_max_val])
+    return F, F_term, G, Q, R, h, h_term, u_max, u_min, x_max, x_min
 
-# Open loop predictions from controller logs
-X_open_loop = np.array([log["X_opt"] for log in sim.logger.component_logs["controller"]])
 
-fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 3. OCP Setup and Closed-Loop Simulation
+    """)
+    return
 
-# Plot states with open loop predictions
-plot_mpc_trajectories(
-    time_vec,
-    X_closed_loop,
-    X_open_loop,
-    labels=["State 1", "State 2"],
-    fig=fig,
-    ax=axs[0],
-    title="Closed-Loop MPC Trajectories with Open-Loop Predictions",
-    bounds=[(x_min[0], x_max[0]), (x_min[1], x_max[1])],
-    step_interval=4,
-)
 
-# Plot controls
-plot_controls(
-    time_vec,
-    U_closed_loop,
-    labels=["Control"],
-    fig=fig,
-    ax=axs[1],
-    title="Closed-Loop Control Action",
-    bounds=[(u_min[0], u_max[0])],
-)
+@app.cell
+def _(
+    A,
+    B,
+    ConstraintList,
+    F,
+    F_term,
+    G,
+    GaussianSensor,
+    IdentityEstimator,
+    LinearConstraint,
+    LinearDynamics,
+    LinearMPC,
+    LinearOCP,
+    Q,
+    R,
+    Simulation,
+    StepReference,
+    h,
+    h_term,
+    np,
+    nu,
+    nx,
+):
+    N_horizon = 20
+    N_sim = 40
+    dt = 0.1
+    t_end = N_sim * dt
 
-plt.tight_layout()
-plt.show()
+    cl = ConstraintList()
+    cl.add(LinearConstraint(F=F, G=G, h=h), range(N_horizon))
+    cl.add(LinearConstraint(F=F_term, h=h_term, nu=nu), [N_horizon])
+
+    # Use LinearDynamics with dt
+    dynamics = LinearDynamics(A, B, dt=dt)
+
+    ocp = LinearOCP(
+        N=N_horizon,
+        dt=dt,
+        dynamics=dynamics,
+        Q=Q,
+        R=R,
+        constraints=cl,
+    )
+
+    # Setup using LinearMPC wrapper with multiple shooting (sparse) and qrqp backend
+    setup_args = {
+        "method": "multiple_shooting",
+        "dynamics_type": "discrete",
+        "solver": "qrqp",
+        "solver_opts": {"print_iter": False, "print_header": False},
+    }
+
+    mpc = LinearMPC(linear_ocp=ocp, dt=dt, setup_args=setup_args)
+
+    # Simulation setup
+    x0_val = np.array([1.5, 0.0])
+    dynamics.x = x0_val
+
+    ref = StepReference(dt=dt, step_value=np.zeros(nx))
+    sensor = GaussianSensor(dt=dt, std_dev=0.0)
+    estimator = IdentityEstimator(dt=dt)
+
+    sim = Simulation(t_end=t_end, plant=dynamics, reference=ref, sensor=sensor, estimator=estimator, controller=mpc)
+
+    sim.run()
+    return (sim,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 4. Plot Results
+    """)
+    return
+
+
+@app.cell
+def _(
+    np,
+    pd,
+    plot_controls,
+    plot_mpc_trajectories,
+    plt,
+    sim,
+    u_max,
+    u_min,
+    x_max,
+    x_min,
+):
+    # Extract results from logger
+    results_df = pd.DataFrame(sim.logger.universal_logs)
+    time_vec = results_df["t"].to_numpy()
+
+    # Extract X_closed_loop and X_open_loop from the logs
+    X_closed_loop = np.array([log["y"] for log in sim.logger.universal_logs])
+    U_closed_loop = np.array([log["u"] for log in sim.logger.universal_logs])
+
+    # Open loop predictions from controller logs
+    X_open_loop = np.array([log["X_opt"] for log in sim.logger.component_logs["controller"]])
+
+    fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+
+    # Plot states with open loop predictions
+    plot_mpc_trajectories(
+        time_vec,
+        X_closed_loop,
+        X_open_loop,
+        labels=["State 1", "State 2"],
+        fig=fig,
+        ax=axs[0],
+        title="Closed-Loop MPC Trajectories with Open-Loop Predictions",
+        bounds=[(x_min[0], x_max[0]), (x_min[1], x_max[1])],
+        step_interval=4,
+    )
+
+    # Plot controls
+    plot_controls(
+        time_vec,
+        U_closed_loop,
+        labels=["Control"],
+        fig=fig,
+        ax=axs[1],
+        title="Closed-Loop Control Action",
+        bounds=[(u_min[0], u_max[0])],
+    )
+
+    plt.tight_layout()
+    plt.show()
+    return
+
+
+if __name__ == "__main__":
+    app.run()

@@ -4,7 +4,7 @@
 
 * src/        # Implementations inside packages.
 * scripts/    # CLI entry points.
-* examples/  # Jupyter notebooks
+* examples/  # Marimo notebooks
 
 ## Project specific instructions
 

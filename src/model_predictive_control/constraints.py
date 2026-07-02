@@ -519,7 +519,7 @@ class ConstraintList:
         if isinstance(time_indices, Iterable):
             return [i if i >= 0 else N + 1 + i for i in time_indices]
 
-        msg = f"Unsupported time_indices format: {type(time_indices)}"  # type: ignore[unreachable]
+        msg = f"Unsupported time_indices format: {type(time_indices)}"
         raise ValueError(msg)
 
     def __iter__(self) -> Iterator[tuple[BaseConstraint, Index]]:

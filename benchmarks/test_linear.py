@@ -1,5 +1,7 @@
 """Benchmark for linear MPC."""
 
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
 
@@ -74,7 +76,7 @@ def setup_linearized_inverted_pendulum_mpc() -> tuple[LinearMPC, npt.NDArray[np.
     return LinearMPC(linear_ocp=ocp, setup_args=setup_args), A, B
 
 
-def test_linear_mpc_step(benchmark) -> None:  # type: ignore[no-untyped-def] # noqa: ANN001
+def test_linear_mpc_step(benchmark: Any) -> None:
     """Benchmark stepping the linear MPC loop."""
     mpc, A, B = setup_linearized_inverted_pendulum_mpc()
     # Initial offset
@@ -117,7 +119,7 @@ def test_linear_mpc_step(benchmark) -> None:  # type: ignore[no-untyped-def] # n
         benchmark.extra_info["total_solver_iterations"] = -1
 
 
-def test_linear_ocp_solve(benchmark) -> None:  # type: ignore[no-untyped-def] # noqa: ANN001
+def test_linear_ocp_solve(benchmark: Any) -> None:
     """Benchmark solving the linear OCP."""
     mpc, _, _ = setup_linearized_inverted_pendulum_mpc()
     ocp = mpc.ocp

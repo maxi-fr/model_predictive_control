@@ -185,10 +185,10 @@ def test_objective_initialization() -> None:
 
     # invalid arguments
     with pytest.raises(ValueError, match=r"Invalid arguments for Objective constructor."):
-        Objective(stage_cost, term_cost, 5, "extra")  # type: ignore[call-overload]
+        Objective(stage_cost, term_cost, 5, "extra")  # ty:ignore[no-matching-overload]
 
     with pytest.raises(ValueError, match=r"Invalid arguments for Objective constructor."):
-        Objective()  # type: ignore[call-overload]
+        Objective()  # ty:ignore[no-matching-overload]
 
 
 def test_objective_validate_dimensions() -> None:

@@ -16,7 +16,7 @@ from model_predictive_control.objective import CostFunction, Objective, Quadrati
 from model_predictive_control.ocp import OCP, rk4_integrator
 
 
-def setup_simple_ocp(dynamics: Any = None, objective: Objective | None = None, **kwargs: Any) -> OCP:  # noqa: ANN401
+def setup_simple_ocp(dynamics: Any = None, objective: Objective | None = None, **kwargs: Any) -> OCP:
     # Simple double integrator system
     # x = [p, v], u = [a]
     nx = 2
@@ -50,7 +50,7 @@ def setup_simple_ocp(dynamics: Any = None, objective: Objective | None = None, *
 def test_ocp_validation_missing_attrs() -> None:
     # Test missing arguments explicitly
     with pytest.raises(TypeError, match="missing 2 required positional arguments: 'objective' and 'dynamics'"):
-        OCP(10, 0.1)  # type: ignore[call-arg]
+        OCP(10, 0.1)  # type: ignore  # noqa: PGH003
 
 
 def test_ocp_validation_wrong_dims() -> None:

@@ -3,6 +3,7 @@
 import casadi as ca
 import numpy as np
 
+
 def setup_raw_inverted_pendulum_ocp():
     """Set up the inverted pendulum OCP benchmark using pure CasADi Opti."""
     m_cart = 1.0
@@ -24,8 +25,8 @@ def setup_raw_inverted_pendulum_ocp():
     # Dynamics function
     x_sym = ca.MX.sym("x", nx)
     u_sym = ca.MX.sym("u", nu)
-    
-    p, v, theta, omega = x_sym[0], x_sym[1], x_sym[2], x_sym[3]
+
+    _p, v, theta, omega = x_sym[0], x_sym[1], x_sym[2], x_sym[3]
     sin_theta = ca.sin(theta)
     cos_theta = ca.cos(theta)
     denominator = m_cart + m_pend - m_pend * cos_theta**2
@@ -78,16 +79,17 @@ def setup_raw_inverted_pendulum_ocp():
     opti.subject_to(x_N[0] <= p_max_val)
 
     opti.minimize(cost)
-    
+
     p_opts = {"expand": True}
     s_opts = {"max_iter": 1000, "print_level": 0}
     opti.solver("ipopt", p_opts, s_opts)
 
     return opti, x0_param, X, U
 
+
 def test_nonlinear_raw_ocp_solve(benchmark) -> None:
     """Benchmark solving the raw non-linear OCP with CasADi Opti."""
-    opti, x0_param, X, U = setup_raw_inverted_pendulum_ocp()
+    opti, x0_param, _X, _U = setup_raw_inverted_pendulum_ocp()
     x0_val = np.array([0.0, 0.0, 0.5, 0.0])
 
     def solve():
@@ -95,19 +97,20 @@ def test_nonlinear_raw_ocp_solve(benchmark) -> None:
         return opti.solve()
 
     sol = benchmark(solve)
-    
+
     status = sol.stats()["return_status"]
     assert "Solve_Succeeded" in status
 
     benchmark.extra_info["ipopt_iterations"] = sol.stats()["iter_count"]
 
+
 def test_nonlinear_raw_mpc_step(benchmark) -> None:
     """Benchmark stepping the raw non-linear MPC loop with CasADi Opti."""
     opti, x0_param, X, U = setup_raw_inverted_pendulum_ocp()
-    
+
     x_current = np.array([0.0, 0.0, 0.5, 0.0])
     num_steps = 10
-    
+
     m_cart = 1.0
     m_pend = 0.1
     length = 0.5
@@ -135,17 +138,17 @@ def test_nonlinear_raw_mpc_step(benchmark) -> None:
     def run_mpc_loop() -> list[int]:
         iterations_list = []
         x = x_current.copy()
-        for k in range(num_steps):
+        for _k in range(num_steps):
             opti.set_value(x0_param, x)
             sol = opti.solve()
-            
+
             iterations = sol.stats()["iter_count"]
             iterations_list.append(iterations)
-            
+
             u_opt = np.atleast_1d(sol.value(U[:, 0]))
-            
+
             x = simulate_step(x, u_opt)
-            
+
             # Warm-start
             opti.set_initial(X, sol.value(X))
             opti.set_initial(U, sol.value(U))

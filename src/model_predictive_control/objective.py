@@ -201,11 +201,11 @@ class Objective:
             self.terminal_cost = cost_term
         elif len(args) == 2 and isinstance(args[0], list) and isinstance(args[1], CostFunction):
             stage_costs, cost_term = args
-            self.stage_costs = list(stage_costs)
+            self.stage_costs = typing.cast("list[CostFunction]", list(stage_costs))
             self.terminal_cost = cost_term
         elif len(args) == 1 and isinstance(args[0], list):
             stage_costs = args[0]
-            self.stage_costs = list(stage_costs)
+            self.stage_costs = typing.cast("list[CostFunction]", list(stage_costs))
             self.terminal_cost = None
         else:
             msg = "Invalid arguments for Objective constructor."

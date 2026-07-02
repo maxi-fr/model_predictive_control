@@ -51,12 +51,14 @@ def plot_states(  # noqa: PLR0913
     for i, idx in enumerate(indices):
         ax.plot(time, X[:, idx] if X.ndim == 2 else X, label=labels[i])
 
-        if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]  # type: ignore[misc]
-            if min_val is not None:
-                ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
-            if max_val is not None:
-                ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
+        if bounds is not None and i < len(bounds):
+            bound = bounds[i]
+            if bound is not None:
+                min_val, max_val = bound
+                if min_val is not None:
+                    ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
+                if max_val is not None:
+                    ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)
@@ -68,7 +70,7 @@ def plot_states(  # noqa: PLR0913
     return fig, ax
 
 
-def plot_mpc_trajectories(  # noqa: PLR0913
+def plot_mpc_trajectories(  # noqa: PLR0913, C901
     time: ArrayLike,
     X_closed_loop: ArrayLike,
     X_open_loop: ArrayLike,
@@ -153,12 +155,14 @@ def plot_mpc_trajectories(  # noqa: PLR0913
         ax.plot(time, cl_trace, color=color, linewidth=2, label=f"{labels[i]} (closed-loop)")
 
         # Plot bounds
-        if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]  # type: ignore[misc]
-            if min_val is not None:
-                ax.axhline(min_val, color=color, linestyle=":", label="Min Bound" if i == 0 else "")
-            if max_val is not None:
-                ax.axhline(max_val, color=color, linestyle=":", label="Max Bound" if i == 0 else "")
+        if bounds is not None and i < len(bounds):
+            bound = bounds[i]
+            if bound is not None:
+                min_val, max_val = bound
+                if min_val is not None:
+                    ax.axhline(min_val, color=color, linestyle=":", label="Min Bound" if i == 0 else "")
+                if max_val is not None:
+                    ax.axhline(max_val, color=color, linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)
@@ -171,7 +175,7 @@ def plot_mpc_trajectories(  # noqa: PLR0913
     return fig, ax
 
 
-def plot_controls(  # noqa: PLR0913
+def plot_controls(  # noqa: PLR0913, C901
     time: ArrayLike,
     U: ArrayLike,
     indices: Sequence[int] | None = None,
@@ -228,12 +232,14 @@ def plot_controls(  # noqa: PLR0913
         else:
             ax.plot(plot_time, trace, label=labels[i])
 
-        if bounds is not None and i < len(bounds) and bounds[i] is not None:
-            min_val, max_val = bounds[i]  # type: ignore[misc]
-            if min_val is not None:
-                ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
-            if max_val is not None:
-                ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
+        if bounds is not None and i < len(bounds):
+            bound = bounds[i]
+            if bound is not None:
+                min_val, max_val = bound
+                if min_val is not None:
+                    ax.axhline(min_val, color="red", linestyle=":", label="Min Bound" if i == 0 else "")
+                if max_val is not None:
+                    ax.axhline(max_val, color="red", linestyle=":", label="Max Bound" if i == 0 else "")
 
     if title:
         ax.set_title(title)

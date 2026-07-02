@@ -123,7 +123,7 @@ def test_constraint_list_add_and_iter() -> None:
 
     c_list = list(cl)
     assert c_list[0][0] is c1
-    assert list(c_list[0][1]) == list(range(5))  # type: ignore[arg-type]
+    assert c_list[0][1] == range(5)
 
     assert c_list[1][0] is c2
     assert c_list[1][1] == -1
